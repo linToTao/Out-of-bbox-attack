@@ -331,10 +331,10 @@ class MaxProbExtractor(nn.Module):
 
 class DetectorYolov5():
     def __init__(self, cfgfile="yolov5/data/coco128.yaml", weightfile="yolov5/weight/yolov5m.pt",
-                 show_detail=False):
+                 show_detail=False, use_FG=False):
         #
         start_t = time.time()
-
+        self.use_FG = use_FG
         self.show_detail = show_detail
         # check whether cuda or cpu
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -424,9 +424,13 @@ class DetectorYolov5():
         if self.show_detail:
             print('Total init time :%f ' % (finish_t - start_t))
         if (with_bbox):
+            if self.use_FG:
+                return max_prob_obj_cls, overlap_score, bboxes, self.features_hook
             # return max_prob_obj, max_prob_cls, overlap_score, bboxes
             return max_prob_obj_cls, overlap_score, bboxes
         else:
+            if self.use_FG:
+                return max_prob_obj_cls, overlap_score, [[]], self.features_hook
             # return max_prob_obj, max_prob_cls, overlap_score, [[]]
             return max_prob_obj_cls, overlap_score, [[]]
 

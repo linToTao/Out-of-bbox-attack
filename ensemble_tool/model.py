@@ -85,6 +85,7 @@ def eval_rowPtach(generator, batch_size, device
                   , fake_images_default=None
                   , attack_mode='trigger'
                   , position='bottom'
+                  , img_size=416
                   , no_detect_img=False
                   , low_conf_img=False):
 
@@ -103,7 +104,7 @@ def eval_rowPtach(generator, batch_size, device
                 if attack_mode == 'patch':
                     adv_batch_t, adv_patch_set, msk_batch = patch_transformer(adv_patch=fake_images[id][i_fimage],
                                                                               lab_batch=label,
-                                                                              img_size=416,
+                                                                              img_size=img_size,
                                                                               patch_mask=[],
                                                                               cls_id_attacked=cls_id_attacked,
                                                                               by_rectangle=by_rectangle,
@@ -121,7 +122,7 @@ def eval_rowPtach(generator, batch_size, device
                 elif attack_mode == 'trigger':
                     adv_batch_t, adv_patch_set, msk_batch = patch_transformer(adv_patch=fake_images[id][i_fimage],
                                                                               lab_batch=label,
-                                                                              img_size=416,
+                                                                              img_size=img_size,
                                                                               patch_mask=[],
                                                                               cls_id_attacked=cls_id_attacked,
                                                                               by_rectangle=by_rectangle,
@@ -221,7 +222,7 @@ def eval_rowPtach(generator, batch_size, device
                 # print("box size : "+str(box.size()))
                 cls_id = box[6].int()
                 cls_name = class_names[cls_id]
-                cls_conf = box[5] * box[4]
+                cls_conf = box[5]
                 if cls_id == cls_id_attacked:
                     if cls_conf > cls_conf_threshold:
                         low_conf_img = False
@@ -264,7 +265,7 @@ def eval_rowPtach(generator, batch_size, device
 def train_rowPtach(method_num, generator
                    , discriminator
                    , opt, batch_size, device
-                   , latent_shift, alpah_latent
+                   , latent_shift, alpah_latent, feature
                    , input_imgs, label, patch_scale, cls_id_attacked
                    , denormalisation
                    , model_name, detector
@@ -282,8 +283,7 @@ def train_rowPtach(method_num, generator
                    , enable_clear_output
                    , enable_no_random
                    , weight_loss_tv
-                   , weight_loss_FIR
-                   , weight_loss_center_bias
+                   , weight_loss_FG
                    , weight_loss_overlap
                    , multi_score=False
                    , deformator=None
@@ -294,6 +294,7 @@ def train_rowPtach(method_num, generator
                    , position='bottom'
                    , cls_conf_threshold=0.5
                    , img_size=416
+                   , use_FG=False
                    ):
     # Clear generator gradients
     if method_num == 0:
@@ -337,11 +338,18 @@ def train_rowPtach(method_num, generator
             p_img_batch = patch_applier(p_img_batch, adv_batch_t)  # torch.Size([8, 14, 3, 416, 416])
 
         if (model_name == "yolov3"):
-            max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=p_img_batch,
-                                                                      cls_id_attacked=cls_id_attacked,
-                                                                      # clear_imgs=None,
-                                                                      clear_imgs=input_imgs,
-                                                                      with_bbox=enable_with_bbox)
+            if use_FG:
+                max_prob_obj_cls, overlap_score, bboxes, feature_hook = detector.detect(input_imgs=p_img_batch,
+                                                                          cls_id_attacked=cls_id_attacked,
+                                                                          clear_imgs=None,
+                                                                          # clear_imgs=input_imgs,
+                                                                          with_bbox=enable_with_bbox)
+            else:
+                max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=p_img_batch,
+                                                                          cls_id_attacked=cls_id_attacked,
+                                                                          clear_imgs=None,
+                                                                          # clear_imgs=input_imgs,
+                                                                          with_bbox=enable_with_bbox)
             # max_prob_obj_cls_clear, overlap_score_clear, bboxes_clear = detector.detect(input_imgs=input_imgs,
             #                                                                       cls_id_attacked=cls_id_attacked,
             #                                                                       clear_imgs=None,
@@ -363,50 +371,33 @@ def train_rowPtach(method_num, generator
             # loss_overlap
             loss_overlap = -torch.mean(overlap_score)
 
-            # # FIR
-            # loss_FIR = 0
-            #
-            # # center bias
-            # x_centers_without_pad = [torch.cat((bbox[:, -1:], (bbox[:, 0:1] + bbox[:, 2:3]) / 2.0), 1) for bbox in
-            #                          bboxes]
-            # x_centers_before_stack = [F.pad(x_center, (0, 0, 0, 14 - x_center.shape[0]), value=1).to(device) for x_center in
-            #                           x_centers_without_pad]
-            # x_centers = torch.stack(x_centers_before_stack, 0)
-            # y_centers_without_pad = [torch.cat((bbox[:, -1:], (bbox[:, 1:2] + bbox[:, 3:4]) / 2.0), 1) for bbox in
-            #                          bboxes]
-            # y_centers_before_stack = [F.pad(y_center, (0, 0, 0, 14 - y_center.shape[0]), value=1).to(device) for y_center in
-            #                           y_centers_without_pad]
-            # y_centers = torch.stack(y_centers_before_stack, 0)
-            # loss_center_bias = 0
-
-            # if position == 'bottom':
-            #     # center_bias_before_relu = y_centers - label[..., :3:2]
-            #     # center_bias = torch.cat((center_bias_before_relu[..., 0:1], torch.nn.functional.relu(
-            #     #     (center_bias_before_relu)[..., 1:2] / ((3/4) * label[..., 4:5]))), 2)
-            #
-            #     center_bias = y_centers - (label[..., :3:2] - label[..., :5:4]/2)
-            #     bias_filter = center_bias[((center_bias[:, :, 0:1] == torch.tensor([11], device=device)) & (
-            #                 center_bias[:, :, 1:2] != torch.tensor([0], device=device))).any(2)]
-            #     loss_center_bias = torch.mean(bias_filter[:, 1:2])
-            #     # loss_center_bias = torch.sum(center_bias) / torch.count_nonzero(center_bias)
-            #     loss_center_bias = 1 / loss_center_bias  # use reciprocal to minimize it, and Excluding zero
-            #     # print(y_centers)
-            #     # print(label)
-            #     # print(bias_filter)
-            #     # print(loss_center_bias)
-            # elif position == 'top':
-            #     pass
-            # elif position == 'left':
-            #     pass
-            # elif position == 'right':
-            #     pass
+            # FG
+            if use_FG:
+                loss_FG0 = torch.nn.functional.mse_loss(feature[0], feature_hook[0])
+                loss_FG1 = torch.nn.functional.mse_loss(feature[1], feature_hook[1])
+                loss_FG2 = torch.nn.functional.mse_loss(feature[2], feature_hook[2])
+                loss_FG = loss_FG0 + loss_FG1 + loss_FG2
+                # print(loss_FG0)
+                # print(loss_FG1)
+                # print(loss_FG2)
+                # print(loss_FG)
+                # print(feature[2].size(), feature_hook[2].size())
+            else:
+                loss_FG = torch.Tensor([0]).to(device)
 
         if (model_name == "yolov5"):
-            max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=p_img_batch,
-                                                                      cls_id_attacked=cls_id_attacked,
-                                                                      # clear_imgs=None,
-                                                                      clear_imgs=input_imgs,
-                                                                      with_bbox=enable_with_bbox)
+            if use_FG:
+                max_prob_obj_cls, overlap_score, bboxes, feature_hook = detector.detect(input_imgs=p_img_batch,
+                                                                          cls_id_attacked=cls_id_attacked,
+                                                                          clear_imgs=None,
+                                                                          # clear_imgs=input_imgs,
+                                                                          with_bbox=enable_with_bbox)
+            else:
+                max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=p_img_batch,
+                                                                          cls_id_attacked=cls_id_attacked,
+                                                                          clear_imgs=None,
+                                                                          # clear_imgs=input_imgs,
+                                                                          with_bbox=enable_with_bbox)
             # max_prob_obj_cls_clear, overlap_score_clear, bboxes_clear = detector.detect(input_imgs=input_imgs,
             #                                                                       cls_id_attacked=cls_id_attacked,
             #                                                                       clear_imgs=None,
@@ -428,43 +419,9 @@ def train_rowPtach(method_num, generator
             # loss_overlap
             loss_overlap = -torch.mean(overlap_score)
 
-            # # FIR
-            # loss_FIR = 0
-            #
-            # # center bias
-            # x_centers_without_pad = [torch.cat((bbox[:, -1:], (bbox[:, 0:1] + bbox[:, 2:3]) / 2.0), 1) for bbox in
-            #                          bboxes]
-            # x_centers_before_stack = [F.pad(x_center, (0, 0, 0, 14 - x_center.shape[0]), value=1).to(device) for x_center in
-            #                           x_centers_without_pad]
-            # x_centers = torch.stack(x_centers_before_stack, 0)
-            # y_centers_without_pad = [torch.cat((bbox[:, -1:], (bbox[:, 1:2] + bbox[:, 3:4]) / 2.0), 1) for bbox in
-            #                          bboxes]
-            # y_centers_before_stack = [F.pad(y_center, (0, 0, 0, 14 - y_center.shape[0]), value=1).to(device) for y_center in
-            #                           y_centers_without_pad]
-            # y_centers = torch.stack(y_centers_before_stack, 0)
-            # loss_center_bias = 0
+            # FG
 
-            # if position == 'bottom':
-            #     # center_bias_before_relu = y_centers - label[..., :3:2]
-            #     # center_bias = torch.cat((center_bias_before_relu[..., 0:1], torch.nn.functional.relu(
-            #     #     (center_bias_before_relu)[..., 1:2] / ((3/4) * label[..., 4:5]))), 2)
-            #
-            #     center_bias = y_centers - (label[..., :3:2] - label[..., :5:4]/2)
-            #     bias_filter = center_bias[((center_bias[:, :, 0:1] == torch.tensor([11], device=device)) & (
-            #                 center_bias[:, :, 1:2] != torch.tensor([0], device=device))).any(2)]
-            #     loss_center_bias = torch.mean(bias_filter[:, 1:2])
-            #     # loss_center_bias = torch.sum(center_bias) / torch.count_nonzero(center_bias)
-            #     loss_center_bias = 1 / loss_center_bias  # use reciprocal to minimize it, and Excluding zero
-            #     # print(y_centers)
-            #     # print(label)
-            #     # print(bias_filter)
-            #     # print(loss_center_bias)
-            # elif position == 'top':
-            #     pass
-            # elif position == 'left':
-            #     pass
-            # elif position == 'right':
-            #     pass
+            loss_FG = torch.Tensor([0]).to(device)
 
         min_loss_det = 999
         if (min_loss_det > loss_filter_det):
@@ -484,9 +441,8 @@ def train_rowPtach(method_num, generator
             # loss = min_loss_det + (weight_loss_overlap * loss_overlap) + (weight_loss_tv * loss_tv) + 1e-3 * D_loss
         else:
             loss_overlap = 0
-            loss = min_loss_det + (weight_loss_tv * loss_tv)  # (weight_loss_center_bias * loss_center_bias)  + (weight_loss_overlap * loss_overlap)
-            # loss = min_loss_det + (weight_loss_center_bias * loss_center_bias)  # + (weight_loss_FIR * loss_FIR)
-            # print("min_loss_det + (weight_loss_center_bias * loss_center_bias) + (weight_loss_FIR * loss_FIR)")
+            loss = min_loss_det + (weight_loss_FG * loss_FG) + (weight_loss_tv * loss_tv)  # (weight_loss_center_bias * loss_center_bias)  + (weight_loss_overlap * loss_overlap)
+            # loss = loss_FG
 
         loss.backward()
         # print(latent_shift[0].grad)
@@ -509,7 +465,7 @@ def train_rowPtach(method_num, generator
                     # print("box size : "+str(box.size()))
                     cls_id = box[6].int()
                     cls_name = class_names[cls_id]
-                    cls_conf = box[5] * box[4]
+                    cls_conf = box[5]
                     if (cls_id == cls_id_attacked):
                         if (model_name == "yolov2"):
                             x_center = box[0]
@@ -543,7 +499,7 @@ def train_rowPtach(method_num, generator
                 p_img_batch[b] = trans_2tensor(img_pil)
         # print("loss_det:",loss)
         # st()
-        return loss_det, loss_filter_det, loss_overlap, loss_tv, p_img_batch, latent_shift, D_loss
+        return loss_det, loss_filter_det, loss_overlap, loss_FG, loss_tv, p_img_batch, latent_shift, D_loss
 
     # if method_num == 2:  # biggan
     #     opt.zero_grad()

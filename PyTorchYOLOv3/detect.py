@@ -194,14 +194,14 @@ class MaxProbExtractor(nn.Module):
 
 class DetectorYolov3():
     def __init__(self, cfgfile="PyTorchYOLOv3/config/yolov3.cfg", weightfile="PyTorchYOLOv3/weights/yolov3.weights",
-                 show_detail=False, tiny=False):
+                 show_detail=False, tiny=False, use_FG=False):
         #
         start_t = time.time()
 
         if (tiny):
             cfgfile = "PyTorchYOLOv3/config/yolov3-tiny.cfg"
             weightfile = "PyTorchYOLOv3/weights/yolov3-tiny.weights"
-
+        self.use_FG = use_FG
         self.show_detail = show_detail
         # check whether cuda or cpu
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -223,11 +223,45 @@ class DetectorYolov3():
             # init MaxProbExtractor
             self.max_prob_extractor = MaxProbExtractor()
 
+        if use_FG:
+            self.features_hook = []
+
+            def hook(module, fea_in, fea_out):
+                # print("hooker working")
+                self.features_hook.append(fea_in[0])
+                # features_out_hook.append(fea_out[0])
+                return None
+
+            model = self.model
+            model_list = model.module_list
+            # print(model_list)
+            for sequential in model_list:
+                for name, layer in sequential._modules.items():
+                    # if name == "conv_37":
+                    #     layer.register_forward_hook(hook=hook)
+                    #     print("Hook conv_37     done!!!")
+                    # if name == "conv_62":
+                    #     layer.register_forward_hook(hook=hook)
+                    #     print("Hook conv_62     done!!!")
+                    # if name == "conv_75":
+                    #     layer.register_forward_hook(hook=hook)
+                    #     print("Hook conv_75     done!!!")
+                    if name == "conv_80":
+                        layer.register_forward_hook(hook=hook)
+                        print("Hook conv_80     done!!!")
+                    if name == "conv_92":
+                        layer.register_forward_hook(hook=hook)
+                        print("Hook conv_92     done!!!")
+                    if name == "conv_104":
+                        layer.register_forward_hook(hook=hook)
+                        print("Hook conv_104    done!!!")
+
         finish_t = time.time()
         if self.show_detail:
             print('Total init time :%f ' % (finish_t - start_t))
 
     def detect(self, input_imgs, cls_id_attacked, clear_imgs=None, with_bbox=True):
+        self.features_hook = []
         start_t = time.time()
         # resize image
         input_imgs = F.interpolate(input_imgs, size=self.img_size).to(self.device)
@@ -290,8 +324,12 @@ class DetectorYolov3():
         if self.show_detail:
             print('Total init time :%f ' % (finish_t - start_t))
         if (with_bbox):
+            if self.use_FG:
+                return max_prob_obj_cls, overlap_score, bboxes, self.features_hook
             # return max_prob_obj, max_prob_cls, overlap_score, bboxes
             return max_prob_obj_cls, overlap_score, bboxes
         else:
+            if self.use_FG:
+                return max_prob_obj_cls, overlap_score, [[]], self.features_hook
             # return max_prob_obj, max_prob_cls, overlap_score, [[]]
             return max_prob_obj_cls, overlap_score, [[]]

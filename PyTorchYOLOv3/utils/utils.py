@@ -224,7 +224,7 @@ def bbox_iou(box1, box2, x1y1x2y2=True):
     return iou
 
 
-def non_max_suppression(prediction, conf_thres=0.5, iou_thres=0.4, classes=None):
+def non_max_suppression(prediction, conf_thres=0.5, iou_thres=0.4, classes=None, multi_label=False):
     """Performs Non-Maximum Suppression (NMS) on inference results
     Returns:
          detections with shape: nx6 (x1, y1, x2, y2, conf, cls)
@@ -237,7 +237,7 @@ def non_max_suppression(prediction, conf_thres=0.5, iou_thres=0.4, classes=None)
     max_det = 300  # maximum number of detections per image
     max_nms = 30000  # maximum number of boxes into torchvision.ops.nms()
     time_limit = 1.0  # seconds to quit after
-    multi_label = nc > 1  # multiple labels per box (adds 0.5ms/img)
+    multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
 
     t = time.time()
     output = [torch.zeros((0, 6), device="cuda")] * prediction.shape[0]
@@ -291,14 +291,14 @@ def non_max_suppression(prediction, conf_thres=0.5, iou_thres=0.4, classes=None)
         # ------------------------------------------------------
 
         box = xywh2xyxy(y[:, :4])
-
+        # print(multi_label)
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_label:
             i, j = (y[:, 5:] > conf_thres).nonzero(as_tuple=False).T
             y = torch.cat((box[i], y[i, 4, None], y[i, j + 5, None], j[:, None].float()), 1)
         else:  # best class only
             conf, j = y[:, 5:].max(1, keepdim=True)
-            y = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
+            y = torch.cat((box, conf, conf, j.float()), 1)[conf.view(-1) > conf_thres]
 
         # Filter by class
         if classes is not None:

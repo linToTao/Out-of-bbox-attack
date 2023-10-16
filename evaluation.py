@@ -1,9 +1,21 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 import argparse
+
 model_name = "yolov5"  # options : yolov3, yolov5, fasterrcnn
+method_num = 1
+best_step = 776
+test_or_train = "test"
+output_mode = 1  # options:  0(training data. no-patch and label without confidence)   /   1(evalution. with-pacth and label with confidence)
+print("model_name = " + model_name)
+print("method_num = " + str(method_num))
+print("best_step = " + str(best_step))
+print("test_or_train = " + test_or_train)
+print("output_mode = " + str(output_mode))
+print("----------------------------------")
 if model_name == "yolov3":
     from PyTorchYOLOv3.detect import DetectorYolov3
+
 if model_name == "yolov5":
     from yolov5.detect import DetectorYolov5
 
@@ -47,6 +59,7 @@ if attack_mode == 'patch':
 if attack_mode == 'trigger':
     num_of_patches = 1
 
+use_FG = False
 yolo_tiny = False  # only yolo54, yolov3
 by_rectangle = False  # True
 # transformation options
@@ -73,18 +86,21 @@ patch_mode = 0  # options: 0(patch), 1(white), 2(gray), 3(randon)
 # fake_images_path           = "../adversarial-attack-ensemble/patch_sample/3output.png"
 # fake_images_path           = "../adversarial-attack-ensemble/exp/exp07/generated/generated-images-1000.png"
 
+if method_num == 0:
+    method_dir = "baseline_" + model_name
+else:
+    method_dir = model_name + "_method" + str(method_num)
 if attack_mode == 'patch':
     fake_images_path = ["./exp/exp2/generated/generated-images0-1200.png",
                         "./exp/exp2/generated/generated-images1-1200.png"]
 elif attack_mode == 'trigger':
-    fake_images_path = [
-        "./exp/baselin_84_100steps_detloss_5e-1tvloss_EOT_train2017_16into255_45e-2/generated/generated-images0-0084.png"]
+    fake_images_path = ["./exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
 
-# data source
+
 video_name = "WIN_20210113_18_36_46_Pro"  # WIN_20200903_16_52_27_Pro, WIN_20200903_17_17_34_Pro, WIN_20210113_18_36_46_Pro
 video_folder = "./dataset/video/"
-source_folder = "./dataset/coco/test_stop_images/"  # "./dataset/coco/test_stop_images/", "./dataset/coco/train_stop_images/"
-label_labelRescale_folder = "./dataset/coco/test_stop_yolo-labels-rescale_yolov5"
+source_folder = "./dataset/coco/" + test_or_train + "_stop_images/"  # "./dataset/coco/test_stop_images/", "./dataset/coco/train_stop_images/"
+label_labelRescale_folder = "./dataset/coco/" + test_or_train + "_stop_yolo-labels-rescale_" + model_name
 # label_labelRescale_folder = "./dataset/coco/val_stop_yolo-labels-rescale_yolov3"
 
 # video or folder
@@ -106,9 +122,11 @@ if temp_f[0] == 'exp':
 else:
     # sss = sss + '_' + 'stop'
     # sss = sss + '_' + 'stop_val_5e-1_tvweight'
-    sss = sss + '_' + 'exp'
+    if method_num == 0:
+        sss = sss + '_' + 'exp_' + test_or_train + '_baseline'
+    else:
+        sss = sss + '_' + 'exp_' + test_or_train + '_method' + str(method_num)
 
-output_mode = 0  # options:  0(training data. no-patch and label without confidence)   /   1(evalution. with-pacth and label with confidence)
 
 # st()
 # output path
@@ -125,8 +143,8 @@ if output_mode == 0:
     enable_count_map = False
     output_video_name = "video_output"
     output_folder = "./dataset/coco/"
-    output_labels_folder = output_folder + "test_stop_yolo-labels/"
-    output_labelRescale_folder = output_folder + "test_stop_yolo-labels-rescale/"
+    output_labels_folder = output_folder + test_or_train + "_stop_yolo-labels/"
+    output_labelRescale_folder = output_folder + test_or_train + "_stop_yolo-labels-rescale/"
     output_video_folder = output_folder + "video/"
     output_imgs_folder = output_folder + "output_imgs/"
 enable_output_data = True  # options:  True (output bbox labels and images (clear & rescale) and video)   /    False (only video)
@@ -255,9 +273,11 @@ if (model_name == "yolov2"):
 if (model_name == "yolov3"):
     detectorYolov3 = DetectorYolov3(show_detail=False, tiny=yolo_tiny)
     detector = detectorYolov3
+    img_size = 416
 if (model_name == "yolov5"):
     detectorYolov5 = DetectorYolov5(show_detail=False)
     detector = detectorYolov5
+    img_size = 640
 if (model_name == "fasterrcnn"):
     # just use fasterrcnn directly
     detector = None
@@ -292,7 +312,7 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
             padded_img = Image.new('RGB', (w, w), color=(127, 127, 127))
             padded_img.paste(img, (0, int(padding)))
 
-    resize = transforms.Resize((416, 416))
+    resize = transforms.Resize((img_size, img_size))
     img = resize(padded_img)  # choose here
     # to tensor
     imm_tensor = plt2tensor(img).unsqueeze(0)
@@ -376,6 +396,7 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
                                                                                              cls_conf_threshold=cls_conf_threshold,patch_mode=patch_mode,
                                                                                              enable_no_random=enable_no_random,
                                                                                              fake_images_default=fake_images_inputs,attack_mode=attack_mode,position=position,
+                                                                                             img_size=img_size,
                                                                                              no_detect_img=no_detect_img,
                                                                                              low_conf_img=low_conf_img)
 
@@ -492,4 +513,15 @@ if yolo_tiny == True and model_name != 'yolov2':
     model_name = model_name + '_tiny'
 print(model_name)
 print("\n\n")
+
+print(output_labels_folder)
+folder_path = output_labelRescale_folder
+n = 0
+files = os.listdir("../" + folder_path)
+for file_name in files:
+    ab_name = folder_path + file_name
+    fsize = os.path.getsize("../" + ab_name)
+    if fsize == 0:
+        n = n + 1
+print("The number of empty file is " + str(n))
 print('=================== finish ===================\n\n')
