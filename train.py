@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 import sys
 import random
 import argparse
@@ -54,16 +54,19 @@ if use_APGD:
     queue_len = 20  # 20
     ckp_interval = queue_len * (num_compare + 1)
     epsilon1, epsilon2 = 0.005, 0.008
-
-learning_rate = 16/255  # training learning rate. (hint v3~v4(~0.02) v2(~0.01))
-
+weight_loss_FG = 0.1  # 0.1 0.5 1
+learning_rate = 4/255  # training learning rate. 16/255
+print("learning_rate = " + str(learning_rate*255))
 attack_mode = 'trigger'  # 'trigger', 'patch'
 position = 'bottom'
 if attack_mode == 'patch':
     num_of_patches = 2
+    patch_scale = 0.36
+
 if attack_mode == 'trigger':
     num_of_patches = 1
-
+    patch_scale = 0.64
+print("attack mode is " + attack_mode)
 yolo_tiny = False  # hint    : only yolov3 and yolov4
 dataset_second = "stop"  # options : inria, stop, test
 by_rectangle = False  # True: The patch on the character is "rectangular". / False: The patch on the character is "square"
@@ -84,7 +87,7 @@ multi_score = True  # True: detection score is "class score * objectness score" 
 
 # loss weight
 weight_loss_tv = 0.5  # total variation loss rate
-weight_loss_FG = 1.0  # 0.1 0.5
+
 if use_FG:
     print("weight_loss_FG = " + str(weight_loss_FG))
 weight_loss_overlap = 0.0  # total bbox overlap loss rate ([0-0.1])
@@ -92,7 +95,6 @@ weight_loss_overlap = 0.0  # total bbox overlap loss rate ([0-0.1])
 # training setting
 retrain_gan = False  # whether use pre-trained checkpoint
 
-patch_scale = 0.64  # the scale of the patch attached to persons 0.2  (patch_scale, bias_coordinate)=(0.32, 1.5)
 bias_coordinate = 1.5 # use in ‘trigger’ attack_mode
 
 n_epochs = 800  # training total epoch

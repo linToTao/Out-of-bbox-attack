@@ -246,9 +246,9 @@ def eval_rowPtach(generator, batch_size, device
                         draw.rectangle(shape, outline="red")
                         # text
                         color = [255, 0, 0]
-                        font = ImageFont.truetype("cmb10.ttf", int(min(img_width, img_height) / 18))
+                        font = ImageFont.truetype("cmb10.ttf", int(min(img_width, img_height) / 24))
                         sentence = str(cls_name) + " (" + str(round(float(cls_conf), 2)) + ")"
-                        position = [left, top]
+                        position = [0, img_size - 60]
                         draw.text(tuple(position), sentence, tuple(color), font=font)
                     else:
                         low_conf_img = True
@@ -409,11 +409,7 @@ def train_rowPtach(method_num, generator
                 loss_det = torch.mean(max_prob_obj_cls)
                 weight = (max_prob_obj_cls / torch.sum(max_prob_obj_cls)).detach()
                 loss_filter_det = loss_det
-                # loss_filter_det = torch.matmul(weight, max_prob_obj_cls)
-                # print("exp3")
-                # loss_filter_det = torch.mean(max_prob_obj_cls * max_prob_obj_cls)
-                # print("exp2")
-                # loss_filter_det = torch.mean(max_prob_obj_cls[max_prob_obj_cls > cls_conf_threshold])
+
             else:
                 loss_det = torch.mean(max_prob_obj_cls)
             # loss_overlap
@@ -443,6 +439,8 @@ def train_rowPtach(method_num, generator
             loss_overlap = 0
             loss = min_loss_det + (weight_loss_FG * loss_FG) + (weight_loss_tv * loss_tv)  # (weight_loss_center_bias * loss_center_bias)  + (weight_loss_overlap * loss_overlap)
             # loss = loss_FG
+            # loss = min_loss_det
+            # loss = min_loss_det + (weight_loss_FG * loss_FG)
 
         loss.backward()
         # print(latent_shift[0].grad)

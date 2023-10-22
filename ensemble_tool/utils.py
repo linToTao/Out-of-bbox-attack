@@ -115,6 +115,20 @@ def init_tensorboard(path=None ,name=None):
         print("init_tensorboard ("+str(name)+")")
         return SummaryWriter()
 
+
+def init_tensorboard_for_FGexp(path=None ,name=None):
+    if name is not None and path is not None:
+
+        output_file_name = str(name)
+        writer_dir = path / output_file_name
+        print("init_tensorboard / time: "+str(writer_dir))
+        # return SummaryWriter(f'runs/{output_file_name}')
+        return SummaryWriter(writer_dir)
+    else:
+        print("init_tensorboard ("+str(name)+")")
+        return SummaryWriter()
+
+
 def denorm(img_tensors, stats=[(0.5, 0.5, 0.5), (0.5, 0.5, 0.5)]):
     return img_tensors * stats[1][0] + stats[0][0]
 

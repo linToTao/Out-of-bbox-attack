@@ -4,7 +4,7 @@ import sys
 import random
 import argparse
 
-model_name = "yolov3"  # options : yolov3, yolov5, fasterrcnn
+model_name = "yolov5"  # options : yolov3, yolov5, fasterrcnn
 if model_name == "yolov3":
     from PyTorchYOLOv3.detect import DetectorYolov3
     print("Victim model is yolov3")
@@ -111,7 +111,7 @@ if model_name == "yolov3":
                 padded_img = Image.new('RGB', (w, w), color=(127, 127, 127))
                 padded_img.paste(img, (0, int(padding)))
 
-        resize = transforms.Resize((416, 416))
+        resize = transforms.Resize((ds_image_size_second, ds_image_size_second))
         img = resize(padded_img)  # choose here
         # to tensor
         imm_tensor = plt2tensor(img).unsqueeze(0)
@@ -139,12 +139,57 @@ if model_name == "yolov5":
         features_in_hook.append(fea_in[0])
         # features_out_hook.append(fea_out[0])
         return None
-    model = detector.model.model.model
-    for name, layer in model._modules.items():
+    model = detector.model
+    hook_model = detector.model.model.model
+    for name, layer in hook_model._modules.items():
         if name == "24":
             for hook_name, hook_layer in layer.m._modules.items():
                 hook_layer.register_forward_hook(hook=hook)
                 print("Hook " + str((hook_name, hook_layer)) + " done!!!")
+    images = []
+    filenames = []
+    for filename in os.listdir(grey_mask_img_path):
+        if (filename.endswith('.jpg') or filename.endswith('.png')):
+            # image = imageio.v2.imread(source_folder + filename)
+            image = Image.open(grey_mask_img_path + filename).convert('RGB')
+            images.append(image)
+            filenames.append(filename[:-4])
+    nframes = len(images)
+    source_data = images
+    output_name = filenames
+
+    for i, imm in tqdm(enumerate(source_data), desc=f'Output feature', total=nframes):
+        img = imm
+        w, h = img.size
+        if w == h:
+            padded_img = img
+        else:
+            dim_to_pad = 1 if w < h else 2
+            if dim_to_pad == 1:
+                padding = (h - w) / 2
+                padded_img = Image.new('RGB', (h, h), color=(127, 127, 127))
+                padded_img.paste(img, (int(padding), 0))
+
+            else:
+                padding = (w - h) / 2
+                padded_img = Image.new('RGB', (w, w), color=(127, 127, 127))
+                padded_img.paste(img, (0, int(padding)))
+
+        resize = transforms.Resize((ds_image_size_second, ds_image_size_second))
+        img = resize(padded_img)  # choose here
+        # to tensor
+        imm_tensor = plt2tensor(img).unsqueeze(0)
+        imm_tensor = imm_tensor.to(device, torch.float)
+        img_side = imm_tensor.size()[-1]
+
+        model(imm_tensor)
+        for id, feature in enumerate(features_in_hook):
+            vector_fname = output_name[i] + '-' + str(id) + '.pt'
+            torch.save(feature.cpu().detach(), os.path.join(output_feature_path, vector_fname))
+            # print(feature.cpu().detach().size())
+            feature.cpu().detach()
+            # print(id, feature.size())
+        features_in_hook = []
 
 num_files = len(os.listdir(output_feature_path))
 print(num_files)

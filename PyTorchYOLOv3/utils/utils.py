@@ -224,7 +224,7 @@ def bbox_iou(box1, box2, x1y1x2y2=True):
     return iou
 
 
-def non_max_suppression(prediction, conf_thres=0.5, iou_thres=0.4, classes=None, multi_label=False):
+def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, multi_label=False):
     """Performs Non-Maximum Suppression (NMS) on inference results
     Returns:
          detections with shape: nx6 (x1, y1, x2, y2, conf, cls)

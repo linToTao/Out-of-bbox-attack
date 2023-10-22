@@ -358,11 +358,28 @@ class DetectorYolov5():
             # init MaxProbExtractor
             self.max_prob_extractor = MaxProbExtractor()
 
+        if use_FG:
+            self.features_hook = []
+
+            def hook(module, fea_in, fea_out):
+                # print("hooker working")
+                self.features_hook.append(fea_in[0])
+                # features_out_hook.append(fea_out[0])
+                return None
+
+            hook_model = self.model.model.model
+            for name, layer in hook_model._modules.items():
+                if name == "24":
+                    for hook_name, hook_layer in layer.m._modules.items():
+                        hook_layer.register_forward_hook(hook=hook)
+                        print("Hook " + str((hook_name, hook_layer)) + " done!!!")
+
         finish_t = time.time()
         if self.show_detail:
             print('Total init time :%f ' % (finish_t - start_t))
 
     def detect(self, input_imgs, cls_id_attacked, clear_imgs=None, with_bbox=True):
+        self.features_hook = []
         start_t = time.time()
         # resize image
         input_imgs = F.interpolate(input_imgs, size=self.img_size).to(self.device)

@@ -2,8 +2,10 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 import argparse
 
+attack_mode = 'trigger'  # 'trigger', 'patch'
 model_name = "yolov5"  # options : yolov3, yolov5, fasterrcnn
-method_num = 1
+lr = 4
+method_num = 0
 best_step = 776
 test_or_train = "test"
 output_mode = 1  # options:  0(training data. no-patch and label without confidence)   /   1(evalution. with-pacth and label with confidence)
@@ -12,6 +14,7 @@ print("method_num = " + str(method_num))
 print("best_step = " + str(best_step))
 print("test_or_train = " + test_or_train)
 print("output_mode = " + str(output_mode))
+print("lr = " + str(lr))
 print("----------------------------------")
 if model_name == "yolov3":
     from PyTorchYOLOv3.detect import DetectorYolov3
@@ -51,13 +54,15 @@ Gparser = argparse.ArgumentParser(description='Advpatch evaluation')
 # Gparser.add_argument('--model', default='yolov4', type=str, help='options : yolov2, yolov3, yolov4, fasterrcnn')
 # Gparser.add_argument('--tiny', action='store_true', help='options :True or False')
 # Gparser.add_argument('--patch', default='', help='patch location')
-attack_mode = 'trigger'  # 'trigger', 'patch'
+
 position = 'bottom'
 apt1, unpar = Gparser.parse_known_args()
 if attack_mode == 'patch':
     num_of_patches = 2
+    patch_scale = 0.36  # patch size
 if attack_mode == 'trigger':
     num_of_patches = 1
+    patch_scale = 0.64  # patch size
 
 use_FG = False
 yolo_tiny = False  # only yolo54, yolov3
@@ -78,7 +83,7 @@ enable_check_patch = False  # check input patch by human
 # patch
 cls_id_attacked = 11  # ID of the object to which the patch is posted. 11:stop 0:person
 
-patch_scale = 0.64  # patch size
+
 bias_coordinate = 1.5
 
 max_labels_per_img = 14  # maximum number of objects per image
@@ -87,12 +92,14 @@ patch_mode = 0  # options: 0(patch), 1(white), 2(gray), 3(randon)
 # fake_images_path           = "../adversarial-attack-ensemble/exp/exp07/generated/generated-images-1000.png"
 
 if method_num == 0:
-    method_dir = "baseline_" + model_name
+    method_dir = "baseline_" + model_name + "_" + str(lr)
+elif method_num == 1:
+    method_dir = model_name + "_method" + str(method_num) + "_" + str(lr)
 else:
     method_dir = model_name + "_method" + str(method_num)
 if attack_mode == 'patch':
-    fake_images_path = ["./exp/exp2/generated/generated-images0-1200.png",
-                        "./exp/exp2/generated/generated-images1-1200.png"]
+    fake_images_path = ["./exp/exp2/generated/generated-images0-0004.png",
+                        "./exp/exp2/generated/generated-images1-0004.png"]
 elif attack_mode == 'trigger':
     fake_images_path = ["./exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
 
@@ -122,11 +129,15 @@ if temp_f[0] == 'exp':
 else:
     # sss = sss + '_' + 'stop'
     # sss = sss + '_' + 'stop_val_5e-1_tvweight'
-    if method_num == 0:
-        sss = sss + '_' + 'exp_' + test_or_train + '_baseline'
-    else:
-        sss = sss + '_' + 'exp_' + test_or_train + '_method' + str(method_num)
-
+    if attack_mode == "trigger":
+        if method_num == 0:
+            sss = sss + '_' + 'exp_' + test_or_train + '_baseline_' + str(lr)
+        elif method_num == 1:
+            sss = sss + '_' + 'exp_' + test_or_train + '_method' + str(method_num) + "_" + str(lr)
+        else:
+            sss = sss + '_' + 'exp_' + test_or_train + '_method' + str(method_num)
+    elif attack_mode == "patch":
+        sss = model_name + "_exp_in_obj"
 
 # st()
 # output path
@@ -517,10 +528,16 @@ print("\n\n")
 print(output_labels_folder)
 folder_path = output_labelRescale_folder
 n = 0
-files = os.listdir("../" + folder_path)
+if (enable_count_map):
+    files = os.listdir("../" + folder_path)
+else:
+    files = os.listdir(folder_path)
 for file_name in files:
     ab_name = folder_path + file_name
-    fsize = os.path.getsize("../" + ab_name)
+    if (enable_count_map):
+        fsize = os.path.getsize("../" + ab_name)
+    else:
+        fsize = os.path.getsize(ab_name)
     if fsize == 0:
         n = n + 1
 print("The number of empty file is " + str(n))
