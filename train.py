@@ -1,10 +1,10 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 import sys
 import random
 import argparse
 
-model_name = "yolov5"  # options : yolov3, yolov5, fasterrcnn
+model_name = "yolov3"  # options : yolov3, yolov5, fasterrcnn
 if model_name == "yolov3":
     from PyTorchYOLOv3.detect import DetectorYolov3
     print("Victim model is yolov3")
@@ -24,7 +24,7 @@ from ensemble_tool.model import train_rowPtach, TotalVariation, IFGSM
 # from pytorchYOLOv4.demo import DetectorYolov4
 # from adversarialYolo.demo import DetectorYolov2
 # from adversarialYolo.train_patch import PatchTrainer
-from adversarialYolo.load_data import AdvDataset, PatchTransformer, PatchApplier, PatchTransformer_out_of_bbox
+from adversarialYolo.load_data import AdvDataset, SimDataset, PatchTransformer, PatchApplier, PatchTransformer_out_of_bbox
 from pathlib import Path
 # from stylegan2_pytorch import run_generator
 
@@ -43,7 +43,7 @@ np.random.seed(Seed)
 random.seed(Seed)
 device = get_default_device()  # cuda or cpu
 
-use_APGD = True  # True or False
+use_APGD = False  # True or False
 if use_APGD:
     print("use APGD !!!")
 use_FG = False  # True or False
@@ -55,7 +55,9 @@ if use_APGD:
     ckp_interval = queue_len * (num_compare + 1)
     epsilon1, epsilon2 = 0.005, 0.008
 weight_loss_FG = 0.1  # 0.1 0.5 1
-learning_rate = 4/255  # training learning rate. 16/255
+learning_rate = 16/255  # training learning rate. 16/255
+dataset_second = "stop"  # options : stop, simulator
+
 print("learning_rate = " + str(learning_rate*255))
 attack_mode = 'trigger'  # 'trigger', 'patch'
 position = 'bottom'
@@ -68,7 +70,7 @@ if attack_mode == 'trigger':
     patch_scale = 0.64
 print("attack mode is " + attack_mode)
 yolo_tiny = False  # hint    : only yolov3 and yolov4
-dataset_second = "stop"  # options : inria, stop, test
+
 by_rectangle = False  # True: The patch on the character is "rectangular". / False: The patch on the character is "square"
 # transformation options
 enable_rotation = False
@@ -129,7 +131,11 @@ label_folder_name = 'yolo-labels_' + str(model_name)
 #         label_folder_name = label_folder_name + 'tiny'
 
 # confirm folder
-global_dir = increment_path(Path('./exp') / 'exp', exist_ok=False)  # 'checkpoint'
+# global_dir = increment_path(Path('./exp') / 'exp', exist_ok=False)  # 'checkpoint'
+global_dir = increment_path(Path('./exp_repeat1') / 'exp', exist_ok=False)  # 'checkpoint'
+# global_dir = increment_path(Path('./exp_repeat2') / 'exp', exist_ok=False)  # 'checkpoint'
+# global_dir = increment_path(Path('./test_images/exp') / 'exp', exist_ok=False)  # 'checkpoint'
+
 global_dir = Path(global_dir)
 checkpoint_dir = global_dir / 'checkpoint'
 checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -194,7 +200,6 @@ if model_name == "yolov3":
     if yolo_tiny == False:
         batch_size_second = 16
 
-
 if model_name == "yolov5":
     num_fea_per_img = 3
     detectorYolov5 = DetectorYolov5(show_detail=False, use_FG=use_FG,)
@@ -208,7 +213,7 @@ if model_name == "yolov5":
 
 if model_name == "fasterrcnn":
     # just use fasterrcnn directly
-    batch_size_second = 8
+    batch_size_second = 16
     # detector = FasterrcnnResnet50()
 
 if model_name == "maskrcnn":
@@ -220,27 +225,27 @@ finish = time.time()
 print('Load detector in %f seconds.' % (finish - start))
 
 ### -----------------------------------------------------Dataloader---------------------------------------------------------------------- ###
-# if dataset_second == "inria":
-#     # InriaDataset
-#
-#     # batch_size_second      = 8
-#     train_loader_second = torch.utils.data.DataLoader(AdvDataset(img_dir='./dataset/Inria/Train/pos',
-#                                                                    lab_dir='./dataset/Inria/Train/pos/' + str(
-#                                                                        label_folder_name),
-#                                                                    max_lab=14,
-#                                                                    imgsize=ds_image_size_second,
-#                                                                    shuffle=True),
-#                                                       batch_size=batch_size_second,
-#                                                       shuffle=True,
-#                                                       num_workers=10)
-
 if dataset_second == "stop":
     # StopDataset
-
-    # batch_size_second      = 8
+    print(batch_size_second)
     train_loader_second = torch.utils.data.DataLoader(AdvDataset(img_dir='./dataset/coco/train_stop_images',
                                                                  lab_dir='./dataset/coco/train_stop_labels',
                                                                  fea_dir='./dataset/coco/train_image_feature-'+model_name,
+                                                                 max_lab=14,
+                                                                 imgsize=ds_image_size_second,
+                                                                 shuffle=True,
+                                                                 use_FG=use_FG,
+                                                                 # mask_dir='./dataset/coco/train_stop_images_withGrayMask'
+                                                                 ),
+                                                      batch_size=batch_size_second,
+                                                      shuffle=True,
+                                                      num_workers=10)
+
+if dataset_second == "simulator":
+    # StopDataset
+    train_loader_second = torch.utils.data.DataLoader(SimDataset(img_dir='./test_images/train_images',
+                                                                 lab_dir='./test_images/train_images_yolo-labels_'+model_name,
+                                                                 fea_dir='./test_images/train_image_feature-'+model_name,
                                                                  max_lab=14,
                                                                  imgsize=ds_image_size_second,
                                                                  shuffle=True,
@@ -268,7 +273,6 @@ ep_loss_det = 0
 ep_loss_tv = 0
 torch.cuda.empty_cache()
 # Create optimizers
-
 
 opt_ap = IFGSM([*rowPatches], lr=learning_rate)
 # opt_ap = torch.optim.Adam([*rowPatches], lr=learing_rate, betas=(0.5, 0.999), amsgrad=True)

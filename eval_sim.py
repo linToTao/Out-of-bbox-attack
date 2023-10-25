@@ -1,20 +1,19 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 import argparse
 
-attack_mode = 'trigger'  # 'trigger', 'patch'
-model_name = "yolov5"  # options : yolov3, yolov5, fasterrcnn
-lr = 32
-method_num = 7
-best_step = 777
+model_name = "yolov3"  # options : yolov3, yolov5, fasterrcnn
+exp_num = 4
+best_step = 633
 test_or_train = "test"
+lr = 16
 output_mode = 1  # options:  0(training data. no-patch and label without confidence)   /   1(evalution. with-pacth and label with confidence)
 print("model_name = " + model_name)
-print("method_num = " + str(method_num))
+print("exp_num = " + str(exp_num))
 print("best_step = " + str(best_step))
 print("test_or_train = " + test_or_train)
-print("output_mode = " + str(output_mode))
 print("lr = " + str(lr))
+print("output_mode = " + str(output_mode))
 print("----------------------------------")
 if model_name == "yolov3":
     from PyTorchYOLOv3.detect import DetectorYolov3
@@ -54,15 +53,13 @@ Gparser = argparse.ArgumentParser(description='Advpatch evaluation')
 # Gparser.add_argument('--model', default='yolov4', type=str, help='options : yolov2, yolov3, yolov4, fasterrcnn')
 # Gparser.add_argument('--tiny', action='store_true', help='options :True or False')
 # Gparser.add_argument('--patch', default='', help='patch location')
-
+attack_mode = 'trigger'  # 'trigger', 'patch'
 position = 'bottom'
 apt1, unpar = Gparser.parse_known_args()
 if attack_mode == 'patch':
     num_of_patches = 2
-    patch_scale = 0.36  # patch size
 if attack_mode == 'trigger':
     num_of_patches = 1
-    patch_scale = 0.64  # patch size
 
 use_FG = False
 yolo_tiny = False  # only yolo54, yolov3
@@ -83,7 +80,7 @@ enable_check_patch = False  # check input patch by human
 # patch
 cls_id_attacked = 11  # ID of the object to which the patch is posted. 11:stop 0:person
 
-
+patch_scale = 0.64  # patch size
 bias_coordinate = 1.5
 
 max_labels_per_img = 14  # maximum number of objects per image
@@ -91,25 +88,23 @@ patch_mode = 0  # options: 0(patch), 1(white), 2(gray), 3(randon)
 # fake_images_path           = "../adversarial-attack-ensemble/patch_sample/3output.png"
 # fake_images_path           = "../adversarial-attack-ensemble/exp/exp07/generated/generated-images-1000.png"
 
-if method_num == 0:
-    method_dir = "baseline_" + model_name + "_" + str(lr)
-elif method_num == 1:
-    method_dir = model_name + "_method" + str(method_num) + "_" + str(lr)
+if exp_num == 1:
+    method_dir = model_name + "_exp"
 else:
-    method_dir = model_name + "_method" + str(method_num) + "_" + str(lr)
+    method_dir = model_name + "_exp" + str(exp_num)
 if attack_mode == 'patch':
-    fake_images_path = ["./exp/exp2/generated/generated-images0-0004.png",
-                        "./exp/exp2/generated/generated-images1-0004.png"]
+    fake_images_path = ["./exp/exp2/generated/generated-images0-1200.png",
+                        "./exp/exp2/generated/generated-images1-1200.png"]
 elif attack_mode == 'trigger':
-    fake_images_path = ["./exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
-    # fake_images_path = ["./exp_repeat1/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
-    # fake_images_path = ["./exp_repeat2/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
+    fake_images_path = ["./test_images/exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
 
 
 video_name = "WIN_20210113_18_36_46_Pro"  # WIN_20200903_16_52_27_Pro, WIN_20200903_17_17_34_Pro, WIN_20210113_18_36_46_Pro
 video_folder = "./dataset/video/"
-source_folder = "./dataset/coco/" + test_or_train + "_stop_images/"  # "./dataset/coco/test_stop_images/", "./dataset/coco/train_stop_images/"
-label_labelRescale_folder = "./dataset/coco/" + test_or_train + "_stop_yolo-labels-rescale_" + model_name
+source_folder = "./test_images/" + test_or_train + "_images/"
+# source_folder = "./test_images/" + test_or_train + "_imagesWithMask-" + model_name + "/"
+
+label_labelRescale_folder = "./test_images/" + test_or_train + "_images_yolo-labels-rescale_" + model_name
 # label_labelRescale_folder = "./dataset/coco/val_stop_yolo-labels-rescale_yolov3"
 
 # video or folder
@@ -131,22 +126,18 @@ if temp_f[0] == 'exp':
 else:
     # sss = sss + '_' + 'stop'
     # sss = sss + '_' + 'stop_val_5e-1_tvweight'
-    if attack_mode == "trigger":
-        if method_num == 0:
-            sss = sss + '_' + 'exp_' + test_or_train + '_baseline_' + str(lr)
-        elif method_num == 1:
-            sss = sss + '_' + 'exp_' + test_or_train + '_method' + str(method_num) + "_" + str(lr)
-        else:
-            sss = sss + '_' + 'exp_' + test_or_train + '_method' + str(method_num) + "_" + str(lr)
-    elif attack_mode == "patch":
-        sss = model_name + "_exp_in_obj"
+    if exp_num == 1:
+        sss = sss + '_' + 'exp'
+    else:
+        sss = sss + '_' + 'exp' + str(exp_num)
+
 
 # st()
 # output path
 if output_mode == 1:
     enable_count_map = True  # False
     output_video_name = "video_output"
-    output_folder = "eval_output/" + sss + "/"
+    output_folder = "./test_images/eval_" + model_name + "/" + sss +"/"
     output_labels_folder = output_folder + "output_imgs/yolo-labels/"
     output_labelRescale_folder = output_folder + "output_imgs/yolo-labels-rescale/"
     output_video_folder = output_folder + "video/"
@@ -155,11 +146,12 @@ if output_mode == 1:
 if output_mode == 0:
     enable_count_map = False
     output_video_name = "video_output"
-    output_folder = "./dataset/coco/"
-    output_labels_folder = output_folder + test_or_train + "_stop_yolo-labels/"
-    output_labelRescale_folder = output_folder + test_or_train + "_stop_yolo-labels-rescale/"
-    output_video_folder = output_folder + "video/"
-    output_imgs_folder = output_folder + "output_imgs/"
+    # output_folder = "./test_images/"
+    output_folder = "./test_images/masktest/"
+    output_labels_folder = output_folder + test_or_train + "_images_yolo-labels/"
+    output_labelRescale_folder = output_folder + test_or_train + "_images_yolo-labels-rescale/"
+    output_video_folder = output_folder + test_or_train + "_video_" + model_name + "/"
+    output_imgs_folder = output_folder + test_or_train + "_output_imgs_" + model_name + "/"
 enable_output_data = True  # options:  True (output bbox labels and images (clear & rescale) and video)   /    False (only video)
 
 
@@ -269,20 +261,8 @@ for fk_img_path in fake_images_path:
     fake_images_input = plt2tensor(fake_images_input).unsqueeze(0)
     fake_images_input = fake_images_input.to(device, torch.float)
     fake_images_inputs.append(fake_images_input)
-# if (patch_mode == 1):
-#     # white
-#     fake_images_input = torch.ones((3, fake_images_input.size()[-2], fake_images_input.size()[-1]), device=device).to(torch.float).unsqueeze(0)
-# elif (patch_mode == 2):
-#     # gray
-#     fake_images_input = torch.zeros((3, fake_images_input.size()[-2], fake_images_input.size()[-1]), device=device).to(torch.float).unsqueeze(0) + 0.5
-# elif (patch_mode == 3):
-#     # randon
-#     fake_images_input = torch.rand((3, fake_images_input.size()[-2], fake_images_input.size()[-1]), device=device).to(torch.float).unsqueeze(0)
 
-# select detector
-if (model_name == "yolov2"):
-    detectorYolov2 = DetectorYolov2(show_detail=False)
-    detector = detectorYolov2
+
 if (model_name == "yolov3"):
     detectorYolov3 = DetectorYolov3(show_detail=False, tiny=yolo_tiny)
     detector = detectorYolov3

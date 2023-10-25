@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 import sys
 import random
 import argparse
@@ -30,9 +30,12 @@ import fnmatch
 import shutil
 
 
-grey_mask_img_path = './dataset/coco/train_stop_images_withMask/'
-output_feature_path = './dataset/coco/train_image_feature-' + model_name
-
+# grey_mask_img_path = './dataset/coco/train_stop_images_withMask/'
+grey_mask_img_path = './test_images/train_imagesWithMask-' + model_name + '/'
+# output_feature_path = './dataset/coco/train_image_feature-' + model_name
+output_feature_path = './test_images/train_image_feature-' + model_name
+print("masked images from: " + grey_mask_img_path)
+print("save the features in: " + output_feature_path)
 if os.path.exists(output_feature_path):
     shutil.rmtree(output_feature_path)
 os.mkdir(output_feature_path)

@@ -310,7 +310,6 @@ for i, (imm, feature, lab) in enumerate(zip(source_data, features, labs)):
     # writer = init_tensorboard_for_FGexp(path=global_dir, name="adversarial" + filenames[i] + "_use_det")
     writer = init_tensorboard_for_FGexp(path=global_dir, name="adversarial" + filenames[i] + "_detFG")
 
-
     # init & and show the length of one epoch
 
     if torch.cuda.is_available():
