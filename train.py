@@ -1,10 +1,10 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 import sys
 import random
 import argparse
 
-model_name = "yolov3"  # options : yolov3, yolov5, fasterrcnn
+model_name = "yolov5"  # options : yolov3, yolov5, fasterrcnn
 if model_name == "yolov3":
     from PyTorchYOLOv3.detect import DetectorYolov3
     print("Victim model is yolov3")
@@ -18,12 +18,7 @@ from torch import autograd
 from torch.utils.data import DataLoader
 from ensemble_tool.utils import *
 from ensemble_tool.model import train_rowPtach, TotalVariation, IFGSM
-# from GANLatentDiscovery.loading import load_from_dir
-# from GANLatentDiscovery.utils import is_conditional
-# from pytorch_pretrained_detection import FasterrcnnResnet50, MaskrcnnResnet50
-# from pytorchYOLOv4.demo import DetectorYolov4
-# from adversarialYolo.demo import DetectorYolov2
-# from adversarialYolo.train_patch import PatchTrainer
+
 from adversarialYolo.load_data import AdvDataset, SimDataset, PatchTransformer, PatchApplier, PatchTransformer_out_of_bbox
 from pathlib import Path
 # from stylegan2_pytorch import run_generator
@@ -35,7 +30,8 @@ apt = Gparser.parse_known_args()[0]
 enable_no_random = False  # ignore EOT (focus on digital space)
 
 
-Seed = 11111
+Seed = 11111  # 7447  # 3407  # 11111
+print(Seed)
 torch.manual_seed(Seed)
 torch.cuda.manual_seed(Seed)
 torch.cuda.manual_seed_all(Seed)
@@ -43,10 +39,10 @@ np.random.seed(Seed)
 random.seed(Seed)
 device = get_default_device()  # cuda or cpu
 
-use_APGD = False  # True or False
+use_APGD = True  # True or False
 if use_APGD:
     print("use APGD !!!")
-use_FG = False  # True or False
+use_FG = True  # True or False
 if use_FG:
     print("use FG !!!")
 if use_APGD:
@@ -54,20 +50,39 @@ if use_APGD:
     queue_len = 20  # 20
     ckp_interval = queue_len * (num_compare + 1)
     epsilon1, epsilon2 = 0.005, 0.008
-weight_loss_FG = 0.1  # 0.1 0.5 1
-learning_rate = 16/255  # training learning rate. 16/255
+weight_loss_FG = 0.05  # 0.1 0.5 1    0.05 0.1 0.2
+learning_rate = 8/255  # training learning rate. 16/255
 dataset_second = "stop"  # options : stop, simulator
 
-print("learning_rate = " + str(learning_rate*255))
+
+print("learning_rate = " + str(int(learning_rate*255)))
 attack_mode = 'trigger'  # 'trigger', 'patch'
-position = 'bottom'
+cls_id_attacked = 11  # (11: stop sign  9: traffic light  46: banana  47: apple). List: https://gist.github.com/AruniRC/7b3dadd004da04c80198557db5da4bda
+if cls_id_attacked == 11:
+    dataset_second = "stop"
+    bias_coordinate = 1.5  # use in ‘trigger’ attack_mode
+    patch_scale = 0.64
+elif cls_id_attacked == 9:
+    dataset_second = "light"
+    bias_coordinate = 1.6  # use in ‘trigger’ attack_mode
+    patch_scale = 0.36
+elif cls_id_attacked == 46:
+    dataset_second = "banana"
+    bias_coordinate = 1.6  # use in ‘trigger’ attack_mode
+    patch_scale = 0.36
+elif cls_id_attacked == 47:
+    dataset_second = "apple"
+    bias_coordinate = 1.6  # use in ‘trigger’ attack_mode
+    patch_scale = 0.36
+print("dataset is " + dataset_second)
+# dataset_second = "simulator"
 if attack_mode == 'patch':
     num_of_patches = 2
     patch_scale = 0.36
 
 if attack_mode == 'trigger':
     num_of_patches = 1
-    patch_scale = 0.64
+
 print("attack mode is " + attack_mode)
 yolo_tiny = False  # hint    : only yolov3 and yolov4
 
@@ -97,13 +112,10 @@ weight_loss_overlap = 0.0  # total bbox overlap loss rate ([0-0.1])
 # training setting
 retrain_gan = False  # whether use pre-trained checkpoint
 
-bias_coordinate = 1.5 # use in ‘trigger’ attack_mode
-
 n_epochs = 800  # training total epoch
 start_epoch = 1  # from what epoch to start training
 
 epoch_save = 800  # from how many A to save a checkpoint
-cls_id_attacked = 11  # the class attacked. (0: person   11: stop sign). List: https://gist.github.com/AruniRC/7b3dadd004da04c80198557db5da4bda
 cls_id_generation = 259  # the class generated at patch. (259: pomeranian) List: https://gist.github.com/yrevar/942d3a0ac09ec9e5eb3a
 alpha_latent = 1.0  # weight latent space. z = (alpha_latent * z) + ((1-alpha_latent) * rand_z); std:0.99
 rowPatches_size = 128  # the size of patch without gan. It's just like "https://openaccess.thecvf.com/content_CVPRW_2019/html/CV-COPS/Thys_Fooling_Automated_Surveillance_Cameras_Adversarial_Patches_to_Attack_Person_Detection_CVPRW_2019_paper.html"
@@ -131,10 +143,12 @@ label_folder_name = 'yolo-labels_' + str(model_name)
 #         label_folder_name = label_folder_name + 'tiny'
 
 # confirm folder
-# global_dir = increment_path(Path('./exp') / 'exp', exist_ok=False)  # 'checkpoint'
-global_dir = increment_path(Path('./exp_repeat1') / 'exp', exist_ok=False)  # 'checkpoint'
-# global_dir = increment_path(Path('./exp_repeat2') / 'exp', exist_ok=False)  # 'checkpoint'
-# global_dir = increment_path(Path('./test_images/exp') / 'exp', exist_ok=False)  # 'checkpoint'
+if dataset_second != "simulator":
+    # global_dir = increment_path(Path('./exp') / 'exp', exist_ok=False)  # 'checkpoint'
+    # global_dir = increment_path(Path('./exp_repeat1') / (model_name+'_'+str(int(learning_rate*255))+'_exp'), exist_ok=False)  # 'checkpoint'
+    global_dir = increment_path(Path('./exp_appendix') / (model_name+'_'+str(int(learning_rate*255))+'_exp'), exist_ok=False)  # 'checkpoint'
+elif dataset_second == "simulator":
+    global_dir = increment_path(Path('./test_images/exp') / (model_name+'_'+str(int(learning_rate*255))+'_exp'), exist_ok=False)  # 'checkpoint'
 
 global_dir = Path(global_dir)
 checkpoint_dir = global_dir / 'checkpoint'
@@ -163,8 +177,13 @@ for _ in range(num_of_patches):
             # rowPatch = (rowPatch - rowPatch.min()) / (rowPatch.max() - rowPatch.min())
             # rowPatch = rowPatch.requires_grad_(True)
             rowPatch = torch.full((3, int(rowPatch_size/2), rowPatch_size), 0.5).to(device).requires_grad_(True)
-    elif cls_id_attacked == 0:
-        rowPatch = torch.rand((3, rowPatch_size, rowPatch_size), device=device).requires_grad_(True)
+    elif cls_id_attacked == 9:
+        rowPatch = torch.full((3, rowPatch_size, rowPatch_size), 0.5).to(device).requires_grad_(True)
+        # rowPatch = torch.rand((3, rowPatch_size, rowPatch_size), device=device).requires_grad_(True)
+    elif cls_id_attacked == 46:
+        rowPatch = torch.full((3, rowPatch_size, rowPatch_size), 0.5).to(device).requires_grad_(True)
+    elif cls_id_attacked == 47:
+        rowPatch = torch.full((3, rowPatch_size, rowPatch_size), 0.5).to(device).requires_grad_(True)
     rowPatches.append(rowPatch)
 # BigGAN input.     input = ((1-alpha) * fixed) + (alpha * delta)
 fixed_latent_biggan = torch.rand(128, device=device)  # the fixed
@@ -193,23 +212,23 @@ if model_name == "yolov3":
     num_fea_per_img = 3
     detectorYolov3 = DetectorYolov3(show_detail=False, tiny=yolo_tiny, use_FG=use_FG)
     detector = detectorYolov3
-    batch_size_second = 16
+    batch_size_second = 8
+    # batch_size_second = 16
     cls_conf_threshold = 0.
     ds_image_size_second = 416
     # learing_rate = 0.005
-    if yolo_tiny == False:
-        batch_size_second = 16
+
 
 if model_name == "yolov5":
     num_fea_per_img = 3
     detectorYolov5 = DetectorYolov5(show_detail=False, use_FG=use_FG,)
     detector = detectorYolov5
-    batch_size_second = 16
+    batch_size_second = 8
+    # batch_size_second = 16
     cls_conf_threshold = 0.
     ds_image_size_second = 640
     # learing_rate = 0.005
-    if yolo_tiny == False:
-        batch_size_second = 16
+
 
 if model_name == "fasterrcnn":
     # just use fasterrcnn directly
@@ -225,12 +244,11 @@ finish = time.time()
 print('Load detector in %f seconds.' % (finish - start))
 
 ### -----------------------------------------------------Dataloader---------------------------------------------------------------------- ###
-if dataset_second == "stop":
+if dataset_second != "simulator":
     # StopDataset
-    print(batch_size_second)
-    train_loader_second = torch.utils.data.DataLoader(AdvDataset(img_dir='./dataset/coco/train_stop_images',
-                                                                 lab_dir='./dataset/coco/train_stop_labels',
-                                                                 fea_dir='./dataset/coco/train_image_feature-'+model_name,
+    train_loader_second = torch.utils.data.DataLoader(AdvDataset(img_dir='./dataset/coco/train_'+dataset_second+'_images',
+                                                                 lab_dir='./dataset/coco/train_'+dataset_second+'_labels',
+                                                                 fea_dir='./dataset/coco/train_'+dataset_second+'_feature-'+model_name,
                                                                  max_lab=14,
                                                                  imgsize=ds_image_size_second,
                                                                  shuffle=True,
@@ -240,6 +258,8 @@ if dataset_second == "stop":
                                                       batch_size=batch_size_second,
                                                       shuffle=True,
                                                       num_workers=10)
+
+
 
 if dataset_second == "simulator":
     # StopDataset
@@ -441,7 +461,6 @@ for epoch in range(start_epoch, n_epochs + 1):
                 , max_value_latent_item=max_value_latent_item
                 , enable_shift_deformator=enable_shift_deformator
                 , attack_mode=attack_mode
-                , position=position
                 , img_size=ds_image_size_second
                 , use_FG=use_FG
                 )
@@ -555,6 +574,7 @@ for epoch in range(start_epoch, n_epochs + 1):
     print("ep_loss_tv           : " + str(ep_loss_tv))
     print("best_epoch           : " + str(best_epoch))
     print("best_loss            : " + str(best_loss.detach().cpu().numpy()))
+    # print(rowPatches)
     print("-----------------------------------------------")
 
     # print("latent code:         :'" + f"norn_inf:{torch.max(torch.abs(latent_shift_biggan)):.4f}; norm_1:{torch.norm(latent_shift_biggan, p=1) / latent_shift_biggan.shape[0]:.4f}")

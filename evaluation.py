@@ -1,12 +1,12 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 import argparse
 
 attack_mode = 'trigger'  # 'trigger', 'patch'
 model_name = "yolov5"  # options : yolov3, yolov5, fasterrcnn
-lr = 32
+lr = 16
 method_num = 7
-best_step = 777
+best_step = 795
 test_or_train = "test"
 output_mode = 1  # options:  0(training data. no-patch and label without confidence)   /   1(evalution. with-pacth and label with confidence)
 print("model_name = " + model_name)
@@ -101,8 +101,8 @@ if attack_mode == 'patch':
     fake_images_path = ["./exp/exp2/generated/generated-images0-0004.png",
                         "./exp/exp2/generated/generated-images1-0004.png"]
 elif attack_mode == 'trigger':
-    fake_images_path = ["./exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
-    # fake_images_path = ["./exp_repeat1/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
+    # fake_images_path = ["./exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
+    fake_images_path = ["./exp_repeat1/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
     # fake_images_path = ["./exp_repeat2/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
 
 
@@ -302,6 +302,7 @@ batch_size = 1  # one by one
 # video_writer = imageio.get_writer(output_video_folder + output_video_name + ".mp4", fps=fps)
 no_detect_id_list = []
 low_conf_id_list = []
+conf_list = []
 print("\n\n")
 print("================== Froward! ==================")
 for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes):
@@ -411,7 +412,8 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
                                                                                              fake_images_default=fake_images_inputs,attack_mode=attack_mode,position=position,
                                                                                              img_size=img_size,
                                                                                              no_detect_img=no_detect_img,
-                                                                                             low_conf_img=low_conf_img)
+                                                                                             low_conf_img=low_conf_img,
+                                                                                             conf_list=conf_list)
 
         img_output = p_img_batch
 

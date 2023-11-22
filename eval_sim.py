@@ -1,10 +1,10 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 import argparse
 
 model_name = "yolov3"  # options : yolov3, yolov5, fasterrcnn
 exp_num = 4
-best_step = 633
+best_step = 756
 test_or_train = "test"
 lr = 16
 output_mode = 1  # options:  0(training data. no-patch and label without confidence)   /   1(evalution. with-pacth and label with confidence)
@@ -89,9 +89,9 @@ patch_mode = 0  # options: 0(patch), 1(white), 2(gray), 3(randon)
 # fake_images_path           = "../adversarial-attack-ensemble/exp/exp07/generated/generated-images-1000.png"
 
 if exp_num == 1:
-    method_dir = model_name + "_exp"
+    method_dir = model_name + "_" + str(lr) + "_exp"
 else:
-    method_dir = model_name + "_exp" + str(exp_num)
+    method_dir = model_name + "_" + str(lr) + "_exp" + str(exp_num)
 if attack_mode == 'patch':
     fake_images_path = ["./exp/exp2/generated/generated-images0-1200.png",
                         "./exp/exp2/generated/generated-images1-1200.png"]
@@ -127,9 +127,9 @@ else:
     # sss = sss + '_' + 'stop'
     # sss = sss + '_' + 'stop_val_5e-1_tvweight'
     if exp_num == 1:
-        sss = sss + '_' + 'exp'
+        sss = sss + '_' + 'exp' + '_' + str(lr)
     else:
-        sss = sss + '_' + 'exp' + str(exp_num)
+        sss = sss + '_' + 'exp' + str(exp_num) + '_' + str(lr)
 
 
 # st()
@@ -242,6 +242,7 @@ elif (source_key == 1):
     source_data = images
     output_name = filenames
 finish_r = time.time()
+# print(filenames)
 print('Finish reading images in %f seconds.' % (finish_r - start_r))
 
 # Read patch image
@@ -282,8 +283,11 @@ batch_size = 1  # one by one
 # video_writer = imageio.get_writer(output_video_folder + output_video_name + ".mp4", fps=fps)
 no_detect_id_list = []
 low_conf_id_list = []
+conf_list = []
+origin_conf = []
 print("\n\n")
 print("================== Froward! ==================")
+
 for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes):
 
     # if i>3: break
@@ -318,7 +322,7 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
     if (model_name == "yolov3" or model_name == "yolov5"):
         max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=imm_tensor,
                                                                   cls_id_attacked=cls_id_attacked, with_bbox=True)
-
+        origin_conf.append(max_prob_obj_cls.cpu().detach())
     # add patch
     # get bbox label.
     labels = []  # format:  (label, x_center, y_center, w, h)  ex:(0 0.5 0.6 0.07 0.22)
@@ -391,7 +395,8 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
                                                                                              fake_images_default=fake_images_inputs,attack_mode=attack_mode,position=position,
                                                                                              img_size=img_size,
                                                                                              no_detect_img=no_detect_img,
-                                                                                             low_conf_img=low_conf_img)
+                                                                                             low_conf_img=low_conf_img,
+                                                                                             conf_list=conf_list)
 
         img_output = p_img_batch
 
@@ -449,6 +454,7 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
         # save bbox
         output_path = str(output_labels_folder) + '%s.txt' % (iname)
         np.savetxt(output_path, labels, fmt='%.6f')
+
     if (enable_output_data):
         # save recale bbox
         output_path = output_labelRescale_folder + iname + ".txt"
@@ -487,7 +493,20 @@ print("\n\n")
 
 # video_writer.release()
 # print("\n\n")
-
+conf_path = str(output_imgs_folder) + "conf.txt"
+origin_conf_path = "./test_images/exp/" + model_name + "_origin_conf.txt"
+f = open(conf_path, 'w')
+f2 = open(origin_conf_path, 'w')
+l1, l2 = (list(t) for t in zip(*sorted(zip(filenames, conf_list))))
+l1, l3 = (list(t) for t in zip(*sorted(zip(filenames, origin_conf))))
+print(l1)
+print(l3)
+for i in l2:
+    f.write(str(float(i)) + '\n')
+f.close()
+for i in l3:
+    f2.write(str(float(i)) + '\n')
+f2.close()
 # st()
 # MAP
 if (enable_count_map):

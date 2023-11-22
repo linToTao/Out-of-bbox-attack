@@ -21,6 +21,7 @@ if __name__ == '__main__':
 
     coco = COCO(annFile)
     catIds = coco.getCatIds(catNms=['stop sign'])
+    class_num = 11
     imgIds = coco.getImgIds(catIds=catIds)
 
     train_img_dict = defaultdict(list)
@@ -55,7 +56,6 @@ if __name__ == '__main__':
                     coco_bbox = tuple(ann['bbox'])
                     x_center, y_center, w, h = pbx.convert_bbox(coco_bbox, from_type="coco", to_type="yolo",
                                                                 image_size=(W, H))
-                    class_num = 11
 
                     sample_label_list.append(str(class_num))
                     sample_label_list.append(str(x_center))
@@ -160,10 +160,10 @@ if __name__ == '__main__':
 
         for ann in anns:
             # masks_per_ann = polygons_to_mask(img_shape, ann['segmentation'])
-            x1 = int(anns['bbox'][0])
-            y2 = int(anns['bbox'][1] + anns['bbox'][3])
-            x2 = int(anns['bbox'][0] + anns['bbox'][2])
-            y1 = int(anns['bbox'][1])
+            x1 = int(ann['bbox'][0])
+            y2 = int(ann['bbox'][1] + ann['bbox'][3])
+            x2 = int(ann['bbox'][0] + ann['bbox'][2])
+            y1 = int(ann['bbox'][1])
             masks_all[y1:y2, x1:x2, :] = 1
 
             # for mask in masks_per_ann:

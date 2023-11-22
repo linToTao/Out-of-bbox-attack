@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 import sys
 import random
 import argparse
@@ -11,6 +11,14 @@ if model_name == "yolov3":
 if model_name == "yolov5":
     from yolov5.detect import DetectorYolov5
     print("Victim model is yolov5")
+
+grey_mask_img_path = './dataset/coco/train_banana_images_withMask/'
+output_feature_path = './dataset/coco/train_banana_feature-' + model_name
+# grey_mask_img_path = './dataset/coco/train_stop_images_withMask/'
+# output_feature_path = './dataset/coco/train_image_feature-' + model_name
+
+print("masked images from: " + grey_mask_img_path)
+print("save the features in: " + output_feature_path)
 
 import numpy as np
 from tqdm import tqdm
@@ -30,12 +38,7 @@ import fnmatch
 import shutil
 
 
-# grey_mask_img_path = './dataset/coco/train_stop_images_withMask/'
-grey_mask_img_path = './test_images/train_imagesWithMask-' + model_name + '/'
-# output_feature_path = './dataset/coco/train_image_feature-' + model_name
-output_feature_path = './test_images/train_image_feature-' + model_name
-print("masked images from: " + grey_mask_img_path)
-print("save the features in: " + output_feature_path)
+
 if os.path.exists(output_feature_path):
     shutil.rmtree(output_feature_path)
 os.mkdir(output_feature_path)
@@ -195,4 +198,5 @@ if model_name == "yolov5":
         features_in_hook = []
 
 num_files = len(os.listdir(output_feature_path))
+
 print(num_files)

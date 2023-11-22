@@ -27,6 +27,7 @@ class IFGSM(torch.optim.Optimizer):
         for param_group in self.param_groups:
             params = param_group['params']
             for param in params:
+                # print(param.grad.detach())
                 param.data = param.data - self.lr * torch.sign(param.grad)
 
 
@@ -84,10 +85,10 @@ def eval_rowPtach(generator, batch_size, device
                   , enable_no_random=False
                   , fake_images_default=None
                   , attack_mode='trigger'
-                  , position='bottom'
                   , img_size=416
                   , no_detect_img=False
-                  , low_conf_img=False):
+                  , low_conf_img=False
+                  , conf_list=[]):
 
     fake_images = fake_images_default
 
@@ -135,8 +136,8 @@ def eval_rowPtach(generator, batch_size, device
                                                                               with_rectOccluding=enable_rectOccluding,
                                                                               enable_empty_patch=enable_empty_patch,
                                                                               enable_no_random=enable_no_random,
-                                                                              enable_blurred=enable_blurred,
-                                                                              position=position)
+                                                                              enable_blurred=enable_blurred
+                                                                              )
 
                 p_img_batch = patch_applier(p_img_batch, adv_batch_t)
             else:
@@ -170,6 +171,8 @@ def eval_rowPtach(generator, batch_size, device
             max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=p_img_batch,
                                                                       cls_id_attacked=cls_id_attacked,
                                                                       clear_imgs=input_imgs, with_bbox=enable_with_bbox)
+            # print(max_prob_obj_cls)
+            # print(bboxes)
             # loss_det
             if multi_score:
                 # multi = max_prob_obj * max_prob_cls
@@ -202,7 +205,7 @@ def eval_rowPtach(generator, batch_size, device
             min_loss_det = loss_det
 
     loss_det = min_loss_det
-
+    conf_list.append(loss_det.cpu().detach())
     # darw bbox
     if len(bboxes) == 0:
         no_detect_img = True
@@ -248,6 +251,7 @@ def eval_rowPtach(generator, batch_size, device
                         color = [255, 0, 0]
                         font = ImageFont.truetype("cmb10.ttf", int(min(img_width, img_height) / 24))
                         sentence = str(cls_name) + " (" + str(round(float(cls_conf), 2)) + ")"
+                        # print(cls_conf)
                         position = [0, img_size - 60]
                         draw.text(tuple(position), sentence, tuple(color), font=font)
                     else:
@@ -291,7 +295,6 @@ def train_rowPtach(method_num, generator
                    , max_value_latent_item=8
                    , enable_shift_deformator=True
                    , attack_mode='trigger'
-                   , position='bottom'
                    , cls_conf_threshold=0.5
                    , img_size=416
                    , use_FG=False
@@ -334,7 +337,7 @@ def train_rowPtach(method_num, generator
                                                                           with_rectOccluding=enable_rectOccluding,
                                                                           enable_blurred=enable_blurred,
                                                                           enable_no_random=enable_no_random,
-                                                                          position=position)
+                                                                          )
             p_img_batch = patch_applier(p_img_batch, adv_batch_t)  # torch.Size([8, 14, 3, 416, 416])
 
         if (model_name == "yolov3"):
@@ -416,8 +419,13 @@ def train_rowPtach(method_num, generator
             loss_overlap = -torch.mean(overlap_score)
 
             # FG
-
-            loss_FG = torch.Tensor([0]).to(device)
+            if use_FG:
+                loss_FG0 = torch.nn.functional.mse_loss(feature[0], feature_hook[0])
+                loss_FG1 = torch.nn.functional.mse_loss(feature[1], feature_hook[1])
+                loss_FG2 = torch.nn.functional.mse_loss(feature[2], feature_hook[2])
+                loss_FG = loss_FG0 + loss_FG1 + loss_FG2
+            else:
+                loss_FG = torch.Tensor([0]).to(device)
 
         min_loss_det = 999
         if (min_loss_det > loss_filter_det):

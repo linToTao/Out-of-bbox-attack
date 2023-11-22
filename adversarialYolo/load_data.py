@@ -706,8 +706,7 @@ class PatchTransformer_out_of_bbox(nn.Module):
     def forward(self, adv_patch, lab_batch, img_size, patch_mask=[], cls_id_attacked=11, by_rectangle=False,
                 do_rotate=True, rand_loc=True,
                 with_black_trans=False, scale_rate=0.2, with_crease=False, with_projection=False,
-                with_rectOccluding=False, enable_empty_patch=False, enable_no_random=False, enable_blurred=True,
-                position='bottom'):
+                with_rectOccluding=False, enable_empty_patch=False, enable_no_random=False, enable_blurred=True):
         # try:
         #     if cls_id_attacked == 0 and num_of_round > 0:
         #         raise Exception
@@ -731,7 +730,7 @@ class PatchTransformer_out_of_bbox(nn.Module):
         adv_patch_size = adv_patch.size()[1:3]
         if adv_patch_size[0] > img_size or adv_patch_size[1] > img_size:  # > img_size(416)
             adv_patch = adv_patch.unsqueeze(0)
-            if cls_id_attacked == 0:
+            if cls_id_attacked == 9:
                 adv_patch = F.interpolate(adv_patch, size=img_size)
             if cls_id_attacked == 11:
                 adv_patch = F.interpolate(adv_patch, size=(int(img_size / 2), img_size))
@@ -919,6 +918,7 @@ class PatchTransformer_out_of_bbox(nn.Module):
         if enable_no_random and not (enable_empty_patch):
             adv_batch = adv_batch
         if not (enable_no_random) and not (enable_empty_patch):
+
             adv_batch = adv_batch * contrast + brightness + noise
         if not (len(patch_mask) == 0):
             adv_batch = adv_batch * mask_batch
@@ -967,7 +967,7 @@ class PatchTransformer_out_of_bbox(nn.Module):
         #         adv_batch_unit = adv_batch_zeroes
         #         adv_batch_units.append(adv_batch_unit)
 
-        def resize_rotate(adv_batch, by_rectangle=False, cls_id_attacked=11, position='bottom'):
+        def resize_rotate(adv_batch, by_rectangle=False, cls_id_attacked=11):
             if cls_id_attacked == 0:
                 if (with_black_trans):
                     adv_batch = torch.clamp(adv_batch, 0.0, 0.99999)
@@ -1122,7 +1122,7 @@ class PatchTransformer_out_of_bbox(nn.Module):
                 # output: torch.Size([8, 14, 3, 416, 416]), torch.Size([8, 14, 3, 416, 416])
                 # return adv_batch_t * msk_batch_t, (adv_batch_t * msk_batch_t0), (adv_batch_t * msk_batch_t1), (adv_batch_t * msk_batch_t2),  (adv_batch_t * msk_batch_t3), adv_batch_t, msk_batch_t
                 return (adv_batch_t * msk_batch_t), msk_batch_t
-            elif cls_id_attacked == 11:
+            elif cls_id_attacked != 0:
                 if (with_black_trans):
                     adv_batch = torch.clamp(adv_batch, 0.0, 0.99999)
                 else:
@@ -1191,14 +1191,30 @@ class PatchTransformer_out_of_bbox(nn.Module):
                 adv_batch = adv_batch.view(s[0] * s[1], s[2], s[3], s[4])  # torch.Size([112, 3, 416, 416])
                 msk_batch = msk_batch.view(s[0] * s[1], s[2], s[3], s[4])  # torch.Size([112, 3, 416, 416])
                 # target_y = target_y - 0.05
-                if position == 'bottom':
+                if cls_id_attacked == 11:  # stop
                     target_y = target_y + 0.5 * targetoff_y * self.bias_coordinate  # 2.25
-                elif position == 'top':
-                    target_y = target_y - 0.5 * targetoff_y * self.bias_coordinate
-                elif position == 'left':
-                    target_x = target_x - 0.5 * targetoff_x * self.bias_coordinate
-                elif position == 'right':
-                    target_x = target_x + 0.5 * targetoff_x * self.bias_coordinate
+                elif cls_id_attacked == 9:  # traffic light
+                    target_y = target_y + 0.5 * targetoff_y * self.bias_coordinate
+                elif cls_id_attacked == 46:  # banana
+                    temp = np.random.randint(2, size=1)
+                    if temp == 1:
+
+                        target_x = target_x + 0.5 * targetoff_x * self.bias_coordinate
+                    if temp == 0:
+
+                        target_x = target_x - 0.5 * targetoff_x * self.bias_coordinate
+                elif cls_id_attacked == 47:  # apple
+                    temp = np.random.randint(4, size=1)
+                    if temp == 1:
+                        target_x = target_x + 0.5 * targetoff_x * self.bias_coordinate
+                    if temp == 0:
+                        target_x = target_x - 0.5 * targetoff_x * self.bias_coordinate
+                    if temp == 2:
+                        target_y = target_y - 0.5 * targetoff_y * self.bias_coordinate
+                    if temp == 3:
+                        target_y = target_y + 0.5 * targetoff_y * self.bias_coordinate
+                # elif position == 'right':
+                #     target_x = target_x + 0.5 * targetoff_x * self.bias_coordinate
                 tx = (-target_x + 0.5) * 2
                 ty = (-target_y + 0.5) * 2
                 sin = torch.sin(angle)
@@ -1292,8 +1308,8 @@ class PatchTransformer_out_of_bbox(nn.Module):
         # adv_batch_masked, adv_batch_masked0, adv_batch_masked1, adv_batch_masked3, adv_batch_masked4, adv_batch_t, msk_batch_t = resize_rotate(adv_batch)
         adv_batch_masked, msk_batch = resize_rotate(adv_batch,
                                                     by_rectangle,
-                                                    cls_id_attacked,
-                                                    position)  # adv_batch torch.Size([8, 7, 3, 150, 150])   adv_batch_masked torch.Size([8, 7, 3, 416, 416])
+                                                    cls_id_attacked
+                                                    )  # adv_batch torch.Size([8, 7, 3, 150, 150])   adv_batch_masked torch.Size([8, 7, 3, 416, 416])
 
         if (with_projection):
             adv_batch = adv_batch_masked
