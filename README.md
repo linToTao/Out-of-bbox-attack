@@ -1,6 +1,6 @@
-# Out-of-Bounding-Box Triggers: A Stealthy Approach to Cheat Object Detector
+# Out-of-Bounding-Box Triggers: A Stealthy Approach to Cheat Object Detectors
 
-Official code release for [Out-of-Bounding-Box Triggers: A Stealthy Approach to Cheat Object Detector](https://github.com/linToTao/Out-of-bbox-attack).
+Official code release for [Out-of-Bounding-Box Triggers: A Stealthy Approach to Cheat Object Detectors](https://github.com/linToTao/Out-of-bbox-attack).
 
 <p align='center'>
   <b>
