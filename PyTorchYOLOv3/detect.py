@@ -280,7 +280,7 @@ class DetectorYolov3():
             # print(max_prob_obj_cls.shape)
 
             if (with_bbox):
-                bboxes = non_max_suppression(detections, 0.5, 0.4, 11)  ## <class 'list'>.
+                bboxes = non_max_suppression(detections, 0.5, 0.4, cls_id_attacked)  ## <class 'list'>.
                 # print(bboxes)
                 # bboxes = non_max_suppression_old(detections, 0.4, 0.6)
                 # only non None. Replace None with torch.tensor([])

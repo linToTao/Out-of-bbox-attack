@@ -15,13 +15,13 @@ random.seed(Seed)
 import argparse
 
 model_name = "yolov5"  # options : yolov3, yolov5
-opt_type = 'adam'
+opt_type = 'SGD'
 print('opt_type: ' + opt_type)
 use_APGD = False  # True or False
 use_FG = False  # True or False
 is_surrogate = False
 # weight_loss_FG = 0.05  # 0.1 0.5 1    0.05 0.1 0.2
-learning_rate = 8/255  # training learning rate. 16/255
+learning_rate = 0.1  # 8/255  # training learning rate. 16/255
 if model_name == "yolov3":
     if is_surrogate == False:
         from PyTorchYOLOv3.detect import DetectorYolov3
@@ -30,6 +30,9 @@ if model_name == "yolov3":
 
 if model_name == "yolov5":
     from yolov5.detect import DetectorYolov5
+    from yolov5.utils.loss import ComputeLoss
+    from yolov5.models.yolo import Model
+    import yaml
     weight_loss_FG = 0.05  # 0.05 0.1 0.2
     if is_surrogate == False:
         print("Victim model is yolov5")
@@ -41,7 +44,7 @@ from tqdm import tqdm
 from torch import autograd
 from torch.utils.data import DataLoader
 from ensemble_tool.utils import *
-from ensemble_tool.model import train_rowPtach, TotalVariation, IFGSM
+from ensemble_tool.model import train_DPtach, TotalVariation, IFGSM
 
 from adversarialYolo.load_data import AdvDataset, SimDataset, PatchTransformer, PatchApplier, PatchTransformer_out_of_bbox
 from pathlib import Path
@@ -49,7 +52,7 @@ from pathlib import Path
 
 ### -----------------------------------------------------Initialize Setting     ---------------------------------------------------------------------- ###
 Gparser = argparse.ArgumentParser(description='Advpatch Training')
-opt = Gparser.parse_known_args()[0]
+apt = Gparser.parse_known_args()[0]
 
 enable_no_random = False  # ignore EOT (focus on digital space)
 
@@ -77,6 +80,7 @@ attack_mode = 'trigger'  # 'trigger', 'patch'
 cls_id_attacked = 11  # (11: stop sign  9: traffic light  46: banana  47: apple). List: https://gist.github.com/AruniRC/7b3dadd004da04c80198557db5da4bda
 if cls_id_attacked == 11:
     dataset_second = "stop"
+    # dataset_second = "simulator"
     position = 'down'        # up down left right
     bias_coordinate = 1.5  # use in ‘trigger’ attack_mode
     print("bias_coordinate = " + str(int(bias_coordinate * 10)))
@@ -131,14 +135,14 @@ weight_loss_overlap = 0.0  # total bbox overlap loss rate ([0-0.1])
 # training setting
 retrain_gan = False  # whether use pre-trained checkpoint
 
-n_epochs = 800  # training total epoch
+n_epochs = 1000  # 800  # training total epoch
 start_epoch = 1  # from what epoch to start training
 
 epoch_save = 800  # from how many A to save a checkpoint
 cls_id_generation = 259  # the class generated at patch. (259: pomeranian) List: https://gist.github.com/yrevar/942d3a0ac09ec9e5eb3a
 alpha_latent = 1.0  # weight latent space. z = (alpha_latent * z) + ((1-alpha_latent) * rand_z); std:0.99
-rowPatches_size = 128  # the size of patch without gan. It's just like "https://openaccess.thecvf.com/content_CVPRW_2019/html/CV-COPS/Thys_Fooling_Automated_Surveillance_Cameras_Adversarial_Patches_to_Attack_Person_Detection_CVPRW_2019_paper.html"
-method_num = 2  # options : 0 (rowPatch without GAN. randon) / 2 (BigGAN) / 3 (styleGAN2)
+rowPatches_size = 196 # 128  # the size of patch without gan. It's just like "https://openaccess.thecvf.com/content_CVPRW_2019/html/CV-COPS/Thys_Fooling_Automated_Surveillance_Cameras_Adversarial_Patches_to_Attack_Person_Detection_CVPRW_2019_paper.html"
+method_num = 0  # options : 0 (rowPatch without GAN. randon) / 2 (BigGAN) / 3 (styleGAN2)
 # parameters of BigGAN
 enable_shift_deformator = False  # True: patch = G(deformator(z))  /  False: patch = G(z)
 enable_human_annotated_directions = False  # True: only vectors that annotated by human  /   False: all latent vectors
@@ -168,14 +172,15 @@ if dataset_second != "simulator":
     # global_dir = increment_path(Path('./exp') / 'exp', exist_ok=False)  # 'checkpoint'
     # global_dir = increment_path(Path('./exp_repeat1') / (model_name+'_'+str(int(learning_rate*255))+'_exp'), exist_ok=False)  # 'checkpoint'
     # global_dir = increment_path(Path('./exp_appendix') / (model_name+'_'+str(int(learning_rate*255))+'_exp'), exist_ok=False)  # 'checkpoint'
-    global_dir = increment_path(Path(root) / 'exp' / (model_name+'_'+opt_type+'_'+str(int(learning_rate*255))+'_exp'), exist_ok=False)
+    global_dir = increment_path(Path(root) / 'exp' / (model_name+'_Dpatch_exp'), exist_ok=False)
     if is_surrogate:
         global_dir = increment_path(
             Path(root) / (model_name + '_surrogate_' + position + '_' + str(int(bias_coordinate * 10))),
             exist_ok=False)
 
 elif dataset_second == "simulator":
-    global_dir = increment_path(Path('./test_images/exp') / (model_name+'_'+str(int(learning_rate*255))+'_exp'), exist_ok=False)  # 'checkpoint'
+    root = '/pub/data/lin'
+    global_dir = increment_path(Path(root) / 'exp' / (model_name+'_Dpatch_exp_sim'), exist_ok=False)
 
 global_dir = Path(global_dir)
 checkpoint_dir = global_dir / 'checkpoint'
@@ -264,11 +269,21 @@ if model_name == "yolov5":
         num_fea_per_img = 3
         detectorYolov5 = DetectorYolov5(weightfile="yolov5/weight/yolov5_surrogate.pt", show_detail=False, use_FG=use_FG)
         detector = detectorYolov5
-        batch_size_second = 16
+        batch_size_second = 32
         # batch_size_second = 16
         cls_conf_threshold = 0.
         ds_image_size_second = 640
-    # learing_rate = 0.005
+
+    # hyp = 'yolov5/data/hyps/hyp.scratch-low.yaml'
+    # if isinstance(hyp, str):
+    #     with open(hyp, errors='ignore') as f:
+    #         hyp = yaml.safe_load(f)  # load hyps dict
+    # weights = 'yolov5/weight/yolov5m.pt'
+    # ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
+    # model = Model(ckpt['model'].yaml, ch=3, nc=80, anchors=hyp.get('anchors')).to(device)  # create
+    # model.hyp = hyp
+    # detector.model = model
+    # detector.compute_loss = ComputeLoss(detector.model)  # init loss class
 
 
 
@@ -328,26 +343,7 @@ torch.cuda.empty_cache()
 
 opt_ap = IFGSM([*rowPatches], lr=learning_rate)
 opt_adam = torch.optim.Adam([*rowPatches], lr=learning_rate, betas=(0.5, 0.999), amsgrad=True)
-# opt_ap = torch.optim.Adam([*rowPatches], lr=learing_rate, betas=(0.5, 0.999), amsgrad=True)
-# opt_ld = torch.optim.Adam([latent_shift_biggan], lr=learing_rate, betas=(0.5, 0.999), amsgrad=True)
-# opt_ld = torch.optim.SGD([latent_shift_biggan], lr=learing_rate, momentum=0.9)
-# optimizer lr_scheduler
-# scheduler_ap = torch.optim.lr_scheduler.ReduceLROnPlateau(opt_ap, 'min', patience=50)
-# scheduler_ld = torch.optim.lr_scheduler.ReduceLROnPlateau(opt_ld, 'min', patience=50)
-# # load checkpoint
-# if (retrain_gan):
-#     PATH = checkpoint_path
-#     #
-#     checkpoint = torch.load(PATH)
-#     epoch_start = checkpoint['epoch']
-#     start_epoch = epoch_start
-#     latent_shift_biggan = checkpoint['latent_shift_biggan'].to(device).requires_grad_(True)
-#     opt_ld = torch.optim.Adam([latent_shift_biggan], lr=learing_rate, betas=(0.5, 0.999), amsgrad=True)
-#     # The reason for DISABLE this is that if we don’t do this, the training results will be very similar.
-#     # opt_ld.load_state_dict(checkpoint['optimizer_state_dict_biggan'])
 
-#     # optimizer lr_scheduler
-#     scheduler_ld = torch.optim.lr_scheduler.ReduceLROnPlateau(opt_ld, 'min', patience=50)
 writer = init_tensorboard(path=global_dir, name="gan_adversarial")
 
 # init & and show the length of one epoch
@@ -381,70 +377,9 @@ if method_num == 0:
     main_denormalisation = False
 
 ### -----------------------------------------------------Start training---------------------------------------------------------------------- ###
-def is_checkpoint(queue_len, epoch, interval):
-    if epoch <= queue_len:
-        return False
-    elif (epoch - queue_len) % interval == 0:  # 120
-        return True
-    else:
-        return False
-
-# def condition(last_best_loss, best_loss, current_lr, last_lr, num_dec,
-#               threshold):  # in paper threshold is rou*(w_j - w_(j-1))
-#     if num_dec < threshold or (last_best_loss == best_loss and current_lr == last_lr):
-#         return True
-#     else:
-#         return False
-
-def condition(min_loss, last_min_loss_list, var_loss, last_var_loss_list, queue, queue_len, num_compare, epsilon1, epsilon2):  # in paper threshold is rou*(w_j - w_(j-1))
-    if len(queue) < queue_len:
-        return False
-    if len(last_min_loss_list) < num_compare or len(last_var_loss_list) < num_compare:
-        return False
-    # min_diff = [(item - min_loss) < epsilom1 for item in last_min_loss_list]
-    # var_diff = [abs(item - var_loss) < epsilon2 for item in last_var_loss_list]
-    min_bool = True
-    var_bool = True
-    for loss_item, var_item in zip(last_min_loss_list, last_var_loss_list):
-        min_bool = min_bool and (loss_item - min_loss) < epsilon1
-        var_bool = var_bool and abs(var_item - var_loss) < epsilon2
-    if min_bool:
-        if var_bool:
-            return True
-        else:
-            return False
-    else:
-        return False
-
-
-
-if use_APGD:
-    best_patches = []
-    # last_best_patches = []
-    for rowPatch in rowPatches:
-        best_patches.append(rowPatch.detach().clone())
-    #     last_best_patches.append(rowPatch.detach().clone())
-    best_loss = 9999999
-    last_best_loss = 9999999
-
-    min_loss = 9999999
-    last_min_loss_list = []
-
-    var_loss = 999999
-    last_var_loss_list = []
-
-    last_lr = learning_rate
-    current_lr = learning_rate
-    last_loss = 9999999
-
-    queue = []
-
-else:
-    current_lr = learning_rate
-
-    best_loss = 9999999
-
+current_lr = learning_rate
 best_epoch = 0
+best_loss = 9999999
 
 for epoch in range(start_epoch, n_epochs + 1):
     ep_loss_det = 0
@@ -469,9 +404,8 @@ for epoch in range(start_epoch, n_epochs + 1):
             # np.argwhere(np.load('gg.npy')!=latent_shift_biggan.cpu().detach().numpy())
             for rowPatch in rowPatches:
                 rowPatch.data = torch.round(rowPatch.data * 10000) * (10 ** -4)
-            loss_det, loss_filter_det, loss_overlap, loss_FG, loss_tv, p_img_batch, fake_images_denorm, D_loss = train_rowPtach(
-                method_num=method_num, generator=main_generator
-                , discriminator=main_discriminator
+            loss, p_img_batch, fake_images_denorm = train_DPtach(
+                method_num=method_num
                 , opt=main_optimizer, batch_size=batch_size_second, device=device
                 , latent_shift=rowPatches, alpah_latent=alpha_latent, feature=[fea0_batch, fea1_batch, fea2_batch]
                 , input_imgs=img_batch, label=lab_batch, patch_scale=patch_scale, cls_id_attacked=cls_id_attacked
@@ -494,23 +428,16 @@ for epoch in range(start_epoch, n_epochs + 1):
                 , weight_loss_FG=weight_loss_FG
                 , weight_loss_overlap=weight_loss_overlap
                 , multi_score=multi_score
-                , deformator=main_deformator
-                , fixed_latent_biggan=fixed_latent_biggan
-                , max_value_latent_item=max_value_latent_item
-                , enable_shift_deformator=enable_shift_deformator
-                , attack_mode=attack_mode
                 , img_size=ds_image_size_second
                 , use_FG=use_FG
                 )
 
+
             # Tloss.backward()
             # opt_ld.step()
             # # Record loss and score
-            ep_loss_det += loss_det
-            ep_loss_filter_det += loss_filter_det
-            ep_loss_overlap += loss_overlap
-            ep_loss_tv += loss_tv
-            ep_loss_FG += loss_FG
+            ep_loss_det += loss
+
     # if enable_latent_clipping:
 
     ep_loss_det = ep_loss_det / epoch_length_second
@@ -523,84 +450,17 @@ for epoch in range(start_epoch, n_epochs + 1):
     # main_scheduler.step(ep_loss)
 
     ep_loss_det = ep_loss_det.detach().cpu().numpy()
-    ep_loss_filter_det = ep_loss_filter_det.detach().cpu().numpy()
-    # ep_loss_overlap = ep_loss_overlap.detach().cpu().numpy()
-    ep_loss_overlap = 0
-    ep_loss_tv = ep_loss_tv.detach().cpu().numpy()
-    # ep_loss_tv = 0
-    # ep_loss_center_bias = ep_loss_center_bias.detach().cpu().numpy()
-    ep_loss_center_bias = 0
-    ep_loss_FG = ep_loss_FG.detach().cpu().numpy()
+
     # ep_loss_FIR = 0
 
-    if use_APGD:
-        if len(queue) < queue_len:
-            queue.append(ep_loss_det)
-            if len(queue) == queue_len:
-                min_loss = np.min(queue)
-                var_loss = np.var(queue)
-        else:
-            if len(last_min_loss_list) >= num_compare:
-                last_min_loss_list.pop(0)
-            last_min_loss_list.append(min_loss)
-
-            if len(last_var_loss_list) >= num_compare:
-                last_var_loss_list.pop(0)
-            last_var_loss_list.append(var_loss)
-            queue = []
-            queue.append(ep_loss_det)
-
-        # if ep_loss < last_loss:
-        #     print("this epoch's loss surpass last epoch !!!")
-        #     num_dec += 1
-        # last_loss = ep_loss
-
-        if ep_loss < best_loss:
-            best_loss = ep_loss
-            best_epoch = epoch
-            best_patches = []
-            for rowPatch in rowPatches:
-                best_patches.append(rowPatch.detach().clone())
-
-        if is_checkpoint(queue_len, epoch, ckp_interval):
-            # print("this epoch is checkpoint !!!")
-            num_dec = 0
-
-            if condition(min_loss, last_min_loss_list, var_loss, last_var_loss_list, queue, queue_len, num_compare, epsilon1, epsilon2):
-                print("its time to halve the learning rate !!!")
-                rowPatches = []
-                for patch in best_patches:
-                    rowPatches.append(patch.clone().requires_grad_(True))
-                # last_best_loss = best_loss
-                # last_lr = current_lr
-
-                # epsilon1, epsilon2 = epsilon1 / 2, epsilon2 / 2
-                current_lr /= 2
-                print('@@@@@@')
-                print("current_lr           : " + str(current_lr * 255))
-                print("min_loss             : " + str(min_loss))
-                print("var_loss             : " + str(var_loss))
-                print('@@@@@@')
-                main_optimizer = IFGSM([*rowPatches], lr=current_lr)
-            # else:
-            #     # last_best_loss = best_loss
-            #     # last_lr = current_lr
-            #     if len(last_min_loss_list) >= num_compare:
-            #         last_min_loss_list.pop(0)
-            #     last_min_loss_list.append(min_loss)
-            #
-            #     if len(last_var_loss_list) >= num_compare:
-            #         last_var_loss_list.pop(0)
-            #     last_var_loss_list.append(var_loss)
-    else:
-        if ep_loss < best_loss:
-            best_loss = ep_loss
-            best_epoch = epoch
+    if ep_loss < best_loss:
+        best_loss = ep_loss
+        best_epoch = epoch
 
     writer.add_scalar('ep_loss_det', ep_loss_det, epoch)
     writer.add_scalar('seed', Seed, epoch)
 
-    writer.add_scalar('current_lr', current_lr * 255, epoch)
+    writer.add_scalar('current_lr', current_lr, epoch)
     writer.add_scalar('ep_loss_overlap', ep_loss_overlap, epoch)
     writer.add_scalar('ep_loss_tv', ep_loss_tv, epoch)
     # writer.add_scalar('ep_loss_center_bias', ep_loss_center_bias, epoch)
@@ -614,37 +474,20 @@ for epoch in range(start_epoch, n_epochs + 1):
     print("current_lr           : " + str(current_lr * 255))
     print("ep_loss_tv           : " + str(ep_loss_tv))
     print("best_epoch           : " + str(best_epoch))
-    print("best_loss            : " + str(best_loss.detach().cpu().numpy()))
+    # print("best_loss            : " + str(best_loss.detach().cpu().numpy()))
     # print(rowPatches)
     print("-----------------------------------------------")
 
-    # print("latent code:         :'" + f"norn_inf:{torch.max(torch.abs(latent_shift_biggan)):.4f}; norm_1:{torch.norm(latent_shift_biggan, p=1) / latent_shift_biggan.shape[0]:.4f}")
+    if epoch % 5 == 0:
+        current_lr = current_lr * 0.95
+        main_optimizer = IFGSM([*rowPatches], lr=current_lr)
 
     if method_num == 0:
         if best_epoch == epoch:
+            # for id, patch in enumerate(rowPatches):
+            #     if (patch > 1).any() or (patch < 0).any():
+            #         print('XXXX')
             save_samples(index=epoch, sample_dir=sample_dir, patches=rowPatches)
-    # if method_num == 2:
-    #     # save patch
-    #     print(f"Save at: {global_dir}")
-    #     save_samples_GANLatentDiscovery(method_num=method_num,
-    #                                     index=epoch, sample_dir=sample_dir,
-    #                                     deformator=deformator, G=main_generator,
-    #                                     latent_shift=latent_shift_biggan, param_rowPatch_latent=alpha_latent,
-    #                                     fixed_rand_latent=fixed_latent_biggan,
-    #                                     max_value_latent_item=max_value_latent_item,
-    #                                     enable_shift_deformator=enable_shift_deformator,
-    #                                     device=device)
-    #     # print(latent_shift_biggan)
-    #     # break
-    # elif method_num == 3:
-    #     save_samples_GANLatentDiscovery(method_num=method_num,
-    #                                     index=epoch, sample_dir=sample_dir,
-    #                                     deformator=None, G=main_generator,
-    #                                     latent_shift=latent_shift_biggan, param_rowPatch_latent=alpha_latent,
-    #                                     fixed_rand_latent=fixed_latent_biggan,
-    #                                     max_value_latent_item=max_value_latent_item,
-    #                                     enable_shift_deformator=enable_shift_deformator,
-    #                                     device=device)
 
     if epoch % epoch_save == 0:
         # # save the patched image

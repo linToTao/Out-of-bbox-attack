@@ -1,10 +1,10 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 import argparse
 
 model_name = "yolov3"  # options : yolov3, yolov5, fasterrcnn
 exp_num = 4
-best_step = 756
+best_step = 637
 test_or_train = "test"
 lr = 16
 output_mode = 1  # options:  0(training data. no-patch and label without confidence)   /   1(evalution. with-pacth and label with confidence)
@@ -88,15 +88,16 @@ patch_mode = 0  # options: 0(patch), 1(white), 2(gray), 3(randon)
 # fake_images_path           = "../adversarial-attack-ensemble/patch_sample/3output.png"
 # fake_images_path           = "../adversarial-attack-ensemble/exp/exp07/generated/generated-images-1000.png"
 
-if exp_num == 1:
-    method_dir = model_name + "_" + str(lr) + "_exp"
-else:
-    method_dir = model_name + "_" + str(lr) + "_exp" + str(exp_num)
+method_dir = 'yolov3_Dpatch_exp_sim'
+# if exp_num == 1:
+#     method_dir = model_name + "_" + str(lr) + "_exp"
+# else:
+#     method_dir = model_name + "_" + str(lr) + "_exp" + str(exp_num)
 if attack_mode == 'patch':
     fake_images_path = ["./exp/exp2/generated/generated-images0-1200.png",
                         "./exp/exp2/generated/generated-images1-1200.png"]
 elif attack_mode == 'trigger':
-    fake_images_path = ["./test_images/exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
+    fake_images_path = ["/pub/data/lin/exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
 
 
 video_name = "WIN_20210113_18_36_46_Pro"  # WIN_20200903_16_52_27_Pro, WIN_20200903_17_17_34_Pro, WIN_20210113_18_36_46_Pro
@@ -124,12 +125,13 @@ temp_f = fake_images_path[0].split('/')[2]
 if temp_f[0] == 'exp':
     sss = sss + '_' + temp_f
 else:
+    sss = sss + '_' + 'exp_' + test_or_train + '_Dpatch'
     # sss = sss + '_' + 'stop'
     # sss = sss + '_' + 'stop_val_5e-1_tvweight'
-    if exp_num == 1:
-        sss = sss + '_' + 'exp' + '_' + str(lr)
-    else:
-        sss = sss + '_' + 'exp' + str(exp_num) + '_' + str(lr)
+    # if exp_num == 1:
+    #     sss = sss + '_' + 'exp' + '_' + str(lr)
+    # else:
+    #     sss = sss + '_' + 'exp' + str(exp_num) + '_' + str(lr)
 
 
 # st()
@@ -196,7 +198,7 @@ if torch.cuda.is_available():
     if attack_mode == 'patch':
         patch_transformer = PatchTransformer().cuda()
     elif attack_mode == 'trigger':
-        patch_transformer = PatchTransformer_out_of_bbox(bias_coordinate).cuda()
+        patch_transformer = PatchTransformer_out_of_bbox(bias_coordinate, 'down').cuda()
     patch_applier = PatchApplier().cuda()
 else:
     patch_transformer = PatchTransformer()
@@ -392,7 +394,7 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
                                                                                              enable_clear_output=enable_clear_output,
                                                                                              cls_conf_threshold=cls_conf_threshold,patch_mode=patch_mode,
                                                                                              enable_no_random=enable_no_random,
-                                                                                             fake_images_default=fake_images_inputs,attack_mode=attack_mode,position=position,
+                                                                                             fake_images_default=fake_images_inputs,attack_mode=attack_mode,
                                                                                              img_size=img_size,
                                                                                              no_detect_img=no_detect_img,
                                                                                              low_conf_img=low_conf_img,

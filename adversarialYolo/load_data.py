@@ -663,7 +663,7 @@ class PatchTransformer_out_of_bbox(nn.Module):
 
     """
 
-    def __init__(self, bias_coordinate):
+    def __init__(self, bias_coordinate, position):
         super(PatchTransformer_out_of_bbox, self).__init__()
         self.min_contrast = 0.8
         self.max_contrast = 1.2
@@ -674,6 +674,7 @@ class PatchTransformer_out_of_bbox(nn.Module):
         self.maxangle = 20 / 180 * math.pi
         self.medianpooler = MedianPool2d(7, same=True)
         self.bias_coordinate = bias_coordinate
+        self.position = position
         '''
         kernel = torch.cuda.FloatTensor([[0.003765, 0.015019, 0.023792, 0.015019, 0.003765],                                                                                    
                                          [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],                                                                                    
@@ -1192,11 +1193,21 @@ class PatchTransformer_out_of_bbox(nn.Module):
                 msk_batch = msk_batch.view(s[0] * s[1], s[2], s[3], s[4])  # torch.Size([112, 3, 416, 416])
                 # target_y = target_y - 0.05
                 if cls_id_attacked == 11:  # stop
-                    target_y = target_y + 0.5 * targetoff_y * self.bias_coordinate  # 2.25
+                    # target_y = target_y + 0.5 * targetoff_y * self.bias_coordinate  # 2.25
+
+                    if self.position == 'right':
+                        target_x = target_x + 0.5 * targetoff_x * self.bias_coordinate  # right
+                    if self.position == 'left':
+                        target_x = target_x - 0.5 * targetoff_x * self.bias_coordinate  # left
+                    if self.position == 'up':
+                        target_y = target_y - 0.5 * targetoff_y * self.bias_coordinate  # up
+                    if self.position == 'down':
+                        target_y = target_y + 0.5 * targetoff_y * self.bias_coordinate  # down
+
                 elif cls_id_attacked == 9:  # traffic light
                     target_y = target_y + 0.5 * targetoff_y * self.bias_coordinate
                 elif cls_id_attacked == 46:  # banana
-                    temp = np.random.randint(2, size=1)
+                    temp = 0 #np.random.randint(2, size=1)
                     if temp == 1:
 
                         target_x = target_x + 0.5 * targetoff_x * self.bias_coordinate

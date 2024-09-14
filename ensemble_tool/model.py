@@ -1,3 +1,5 @@
+import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -864,17 +866,337 @@ def train_rowPtach(method_num, generator
     #     # print("loss:",loss_det)
     #     return loss_det, loss_overlap, loss_tv, p_img_batch, fake_images, D_loss
 
-# # test
-# import numpy as np
-# def show(img):
-#     npimg = img.numpy()
-#     fig = plt.imshow(np.transpose(npimg, (1, 2, 0)), 
-#                                     interpolation='nearest')
-#     fig.axes.get_xaxis().set_visible(False)
-#     fig.axes.get_yaxis().set_visible(False)
-# plt.ion()
-# plt.figure()
-# show(make_grid(p_img_batch.detach().cpu()[:16,:,:,:]))
-# plt.ioff()
-# plt.show()
-# sys.exit()
+
+def train_DPtach(method_num
+                   , opt, batch_size, device
+                   , latent_shift, alpah_latent, feature
+                   , input_imgs, label, patch_scale, cls_id_attacked
+                   , denormalisation
+                   , model_name, detector
+                   , patch_transformer, patch_applier
+                   , total_variation
+                   , by_rectangle
+                   , enable_rotation
+                   , enable_randomLocation
+                   , enable_crease
+                   , enable_projection
+                   , enable_rectOccluding
+                   , enable_blurred
+                   , enable_with_bbox
+                   , enable_show_plt
+                   , enable_clear_output
+                   , enable_no_random
+                   , weight_loss_tv
+                   , weight_loss_FG
+                   , weight_loss_overlap
+                   , multi_score=False
+                   , img_size=416
+                   , use_FG=False
+                   ):
+    # Clear generator gradients
+    if method_num == 0:
+        opt.zero_grad()
+        p_img_batch = input_imgs
+        batch_size = p_img_batch.size()[0]
+        targets_batch = []
+        for id, patch in enumerate(latent_shift):
+            # add dpatch on imgs
+            patch = torch.clamp(patch, 0.0, 0.99999)
+
+
+            patch = patch.unsqueeze(0)
+
+            for i in range(batch_size):
+
+                size = random.randint(int(patch.size()[1]/2), patch.size()[1])
+                patch_w = size * 2
+                patch_h = size
+
+                x_offset = torch.randint(0, img_size - patch_w + 1, (1,))
+                y_offset = torch.randint(0, img_size - patch_h + 1, (1,))
+
+                resize_patch = F.interpolate(patch, size=(patch_h, patch_w)).squeeze(0)
+
+                p_img_batch[i][:, y_offset:y_offset + patch_h, x_offset:x_offset + patch_w] = resize_patch
+
+        for i in range(batch_size):
+            targets = []
+            for l_id, lab in enumerate(label[i]):
+
+                if lab[0] == cls_id_attacked:
+                    target = torch.zeros((1, 6)).to(device)
+                    target[0, 1:] = lab
+                    target[0, 0] = i
+                    targets.append(target)
+            targets = torch.cat(targets, 0)
+            targets_batch.append(targets)
+        targets_batch = torch.cat(targets_batch, 0).to(device)
+
+
+        if (model_name == "yolov3"):
+            detector.model.eval()
+            # loss, _ = detector.model(p_img_batch, targets_batch)
+            # loss_det = -loss
+            max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=p_img_batch,
+                                                                      cls_id_attacked=cls_id_attacked,
+                                                                      clear_imgs=None,
+                                                                      # clear_imgs=input_imgs,
+                                                                      with_bbox=enable_with_bbox)
+            loss_det = torch.mean(max_prob_obj_cls)
+
+
+        if (model_name == "yolov5"):
+
+            # pred = detector.model(p_img_batch)  # forward
+            # loss, _ = detector.compute_loss(pred, targets_batch)  # loss scaled by batch_size
+            # loss_det = -loss
+            max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=p_img_batch,
+                                                                      cls_id_attacked=cls_id_attacked,
+                                                                      clear_imgs=None,
+                                                                      # clear_imgs=input_imgs,
+                                                                      with_bbox=enable_with_bbox)
+            loss_det = torch.mean(max_prob_obj_cls)
+
+
+
+        # loss: total variation
+        loss_tv = 0
+        for patch in latent_shift:
+            loss_tv += total_variation(patch)
+
+        loss = loss_det + (weight_loss_tv * loss_tv)
+        loss.backward()
+        # print(latent_shift[0].grad)
+        opt.step()
+
+
+        # draw bbox at output
+        # if enable_with_bbox and len(bboxes) > 0:
+        #     trans_2pilimage = transforms.ToPILImage()
+        #     batch = p_img_batch.size()[0]
+        #     for b in range(batch):
+        #         img_pil = trans_2pilimage(p_img_batch[b].cpu())
+        #         img_width = img_pil.size[0]
+        #         img_height = img_pil.size[1]
+        #         namesfile = 'pytorchYOLOv4/data/coco.names'
+        #         class_names = load_class_names(namesfile)
+        #         # sample first image
+        #         bbox = bboxes[b]
+        #         # print("bbox : "+str(bbox))
+        #         for box in bbox:
+        #             # print("box size : "+str(box.size()))
+        #             cls_id = box[6].int()
+        #             cls_name = class_names[cls_id]
+        #             cls_conf = box[5]
+        #             if (cls_id == cls_id_attacked):
+        #                 if (model_name == "yolov2"):
+        #                     x_center = box[0]
+        #                     y_center = box[1]
+        #                     width = box[2]
+        #                     height = box[3]
+        #                     left = (x_center.item() - width.item() / 2) * img_width
+        #                     right = (x_center.item() + width.item() / 2) * img_width
+        #                     top = (y_center.item() - height.item() / 2) * img_height
+        #                     bottom = (y_center.item() + height.item() / 2) * img_height
+        #                 if (model_name == "yolov5") or (model_name == "yolov3" or (model_name == "fasterrcnn")):
+        #                     left = int(box[0] * img_width)
+        #                     right = int(box[2] * img_width)
+        #                     top = int(box[1] * img_height)
+        #                     bottom = int(box[3] * img_height)
+        #                 # img with prediction
+        #                 draw = ImageDraw.Draw(img_pil)
+        #                 shape = [left, top, right, bottom]
+        #                 draw.rectangle(shape, outline="red")
+        #                 # text
+        #                 color = [255, 0, 0]
+        #                 font = ImageFont.truetype("cmb10.ttf", int(min(img_width, img_height) / 18))
+        #                 sentence = str(cls_name) + " (" + str(round(float(cls_conf), 2)) + ")"
+        #                 position = [left, top]
+        #                 draw.text(tuple(position), sentence, tuple(color), font=font)
+        #         if enable_show_plt:
+        #             # show, debug
+        #             plt.imshow(img_pil)
+        #             plt.show()
+        #         trans_2tensor = transforms.ToTensor()
+        #         p_img_batch[b] = trans_2tensor(img_pil)
+        # print("loss_det:",loss)
+        # st()
+        return loss_det, p_img_batch, latent_shift
+
+
+def eval_DPtach(generator, batch_size, device
+                  , latent_shift, alpah_latent
+                  , input_imgs, label, patch_scale, cls_id_attacked
+                  , denormalisation
+                  , model_name, detector
+                  , patch_transformer, patch_applier
+                  , by_rectangle
+                  , enable_rotation
+                  , enable_randomLocation
+                  , enable_crease
+                  , enable_projection
+                  , enable_rectOccluding
+                  , enable_blurred
+                  , enable_with_bbox
+                  , enable_show_plt
+                  , enable_clear_output
+                  , cls_conf_threshold
+                  , patch_mode=0
+                  , multi_score=False
+                  , enable_no_random=False
+                  , fake_images_default=None
+                  , attack_mode='trigger'
+                  , img_size=416
+                  , no_detect_img=False
+                  , low_conf_img=False
+                  , conf_list=[]):
+
+    fake_images = fake_images_default
+
+    # enable_empty_patch == False: no patch
+    enable_empty_patch = False
+    if (patch_mode == 1):
+        enable_empty_patch = True
+
+    min_loss_det = 999
+    for i_fimage in range(1):
+        p_img_batch = input_imgs[0]
+        for id, patch in enumerate(fake_images):
+            if not (enable_clear_output):
+
+                if attack_mode == 'trigger':
+
+                    x_offset = torch.randint(0, img_size - 128 + 1, (1,))
+                    y_offset = torch.randint(0, img_size - 64 + 1, (1,))
+
+                    resize_patch = patch.squeeze(0)
+
+                    p_img_batch[:, y_offset:y_offset + 64, x_offset:x_offset + 128] = resize_patch
+                    p_img_batch = p_img_batch.unsqueeze(0)
+
+
+            else:
+                p_img_batch = input_imgs
+
+        # # test
+        # print("label       size : "+str(label.size()))
+        # print("label            : "+str(label))
+        # print("fake_images size : "+str(fake_images.size()))
+        # print("p_img_batch size : "+str(p_img_batch.size()))
+        # # test
+        # import numpy as np
+        # def show(img):
+        #     npimg = img.numpy()
+        #     fig = plt.imshow(np.transpose(npimg, (1, 2, 0)),
+        #                                     interpolation='nearest')
+        #     fig.axes.get_xaxis().set_visible(False)
+        #     fig.axes.get_yaxis().set_visible(False)
+        # plt.ion()
+        # plt.figure()
+        # show(make_grid(fake_images.detach().cpu()[:16,:,:,:]))
+        # plt.figure()
+        # show(make_grid(p_img_batch.detach().cpu()[:16,:,:,:]))
+        # plt.ioff()
+        # plt.show()
+        # sys.exit()
+
+        # loss.
+
+        if (model_name == "yolov3"):
+            max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=p_img_batch,
+                                                                      cls_id_attacked=cls_id_attacked,
+                                                                      clear_imgs=input_imgs, with_bbox=enable_with_bbox)
+            # print(max_prob_obj_cls)
+            # print(bboxes)
+            # loss_det
+            if multi_score:
+                # multi = max_prob_obj * max_prob_cls
+                loss_det = torch.mean(max_prob_obj_cls)
+            else:
+                loss_det = torch.mean(max_prob_obj_cls)
+            # loss_overlap
+            loss_overlap = -torch.mean(overlap_score)
+        if (model_name == "yolov5"):
+            max_prob_obj_cls, overlap_score, bboxes = detector.detect(input_imgs=p_img_batch,
+                                                                      cls_id_attacked=cls_id_attacked,
+                                                                      clear_imgs=input_imgs, with_bbox=enable_with_bbox)
+            # loss_det
+            if multi_score:
+                # multi = max_prob_obj * max_prob_cls
+                loss_det = torch.mean(max_prob_obj_cls)
+            else:
+                loss_det = torch.mean(max_prob_obj_cls)
+            # loss_overlap
+            loss_overlap = -torch.mean(overlap_score)
+        if (model_name == "fasterrcnn"):
+            max_prob, bboxes = detector.detect(tensor_image_inputs=p_img_batch, cls_id_attacked=cls_id_attacked,
+                                               threshold=0.5)
+            # loss_det
+            loss_det = torch.mean(max_prob)
+            # no loss_overlap
+            loss_overlap = torch.tensor(0.0).to(device)
+
+        if (min_loss_det > loss_det):
+            min_loss_det = loss_det
+
+    loss_det = min_loss_det
+    conf_list.append(loss_det.cpu().detach())
+    # darw bbox
+    if len(bboxes) == 0:
+        no_detect_img = True
+    if enable_with_bbox and len(bboxes) > 0:
+        trans_2pilimage = transforms.ToPILImage()
+        batch = p_img_batch.size()[0]
+        for b in range(batch):
+            img_pil = trans_2pilimage(p_img_batch[b].cpu())
+            img_width = img_pil.size[0]
+            img_height = img_pil.size[1]
+            namesfile = 'pytorchYOLOv4/data/coco.names'
+            class_names = load_class_names(namesfile)
+            # sample first image
+            # print("bbox : "+str(bbox))
+            bbox = bboxes[b]
+            for box in bbox:
+                # print("box size : "+str(box.size()))
+                cls_id = box[6].int()
+                cls_name = class_names[cls_id]
+                cls_conf = box[5]
+                if cls_id == cls_id_attacked:
+                    if cls_conf > cls_conf_threshold:
+                        low_conf_img = False
+                        if model_name == "yolov2":
+                            x_center = box[0]
+                            y_center = box[1]
+                            width = box[2]
+                            height = box[3]
+                            left = (x_center.item() - width.item() / 2) * img_width
+                            right = (x_center.item() + width.item() / 2) * img_width
+                            top = (y_center.item() - height.item() / 2) * img_height
+                            bottom = (y_center.item() + height.item() / 2) * img_height
+                        if (model_name == "yolov5") or (model_name == "yolov3") or (model_name == "fasterrcnn"):
+                            left = int(box[0] * img_width)
+                            right = int(box[2] * img_width)
+                            top = int(box[1] * img_height)
+                            bottom = int(box[3] * img_height)
+                        # img with prediction
+                        draw = ImageDraw.Draw(img_pil)
+                        shape = [left, top, right, bottom]
+                        draw.rectangle(shape, outline="red")
+                        # text
+                        color = [255, 0, 0]
+                        font = ImageFont.truetype("cmb10.ttf", int(min(img_width, img_height) / 24))
+                        sentence = str(cls_name) + " (" + str(round(float(cls_conf), 2)) + ")"
+                        # print(cls_conf)
+                        position = [0, img_size - 60]
+                        draw.text(tuple(position), sentence, tuple(color), font=font)
+                    else:
+                        low_conf_img = True
+            if enable_show_plt:
+                # show, debug
+                plt.imshow(img_pil)
+                plt.show()
+            trans_2tensor = transforms.ToTensor()
+            p_img_batch[b] = trans_2tensor(img_pil)
+
+    return p_img_batch, fake_images, bboxes, no_detect_img, low_conf_img
+

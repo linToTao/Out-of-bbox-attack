@@ -398,7 +398,130 @@ class DetectorYolov5():
             # print(max_prob_obj_cls.shape)
 
             if (with_bbox):
-                bboxes = non_max_suppression(detections, conf_thres=0.5, iou_thres=0.4, classes=11)  ## <class 'list'>.
+                bboxes = non_max_suppression(detections, conf_thres=0.5, iou_thres=0.4, classes=cls_id_attacked)  ## <class 'list'>.
+                # print(bboxes)
+                # bboxes = non_max_suppression_old(detections, 0.4, 0.6)
+                # only non None. Replace None with torch.tensor([])
+                bboxes = [torch.tensor([]) if bbox is None else bbox for bbox in bboxes]
+                bboxes = [rescale_boxes(bbox, self.img_size, [1, 1]) if bbox.dim() == 2 else bbox for bbox in
+                          bboxes]  # shape [1,1] means the range of value is [0,1]
+                # print("bboxes size : "+str(len(bboxes)))
+                # print("bboxes      : "+str(bboxes))
+
+            # get overlap_score
+            if not (clear_imgs == None):
+                # resize image
+                input_imgs_clear = F.interpolate(clear_imgs, size=self.img_size).to(self.device)
+                # detections_tensor
+                detections_clear = self.model(input_imgs_clear)[0]  ## v5:torch.Size([8, 25200, 85])
+                if not (detections_clear[0] == None):
+                    #
+                    # output_score_clear = self.max_prob_extractor(detections_clear)
+                    output_score_obj_clear, output_score_cls_clear = self.max_prob_extractor(detections_clear)
+                    output_cls_obj = output_score_obj_clear * output_score_cls_clear
+                    # st()
+                    output_score_clear, output_score_clear_index = torch.max(output_cls_obj, dim=1)
+                    # count overlap
+                    output_score = max_prob_obj_cls
+                    # output_score_clear = (max_prob_obj_clear * max_prob_cls_clear)
+                    overlap_score = torch.abs(output_score - output_score_clear)
+                else:
+                    overlap_score = torch.tensor(0).to(self.device)
+            else:
+                overlap_score = torch.FloatTensor(0).to(self.device)
+        else:
+            print("None : " + str(type(detections)))
+            print("None : " + str(detections))
+            max_prob_obj = []
+            max_prob_cls = []
+            bboxes = []
+            overlap_score = torch.tensor(0).to(self.device)
+
+        finish_t = time.time()
+        if self.show_detail:
+            print('Total init time :%f ' % (finish_t - start_t))
+        if (with_bbox):
+            if self.use_FG:
+                return max_prob_obj_cls, overlap_score, bboxes, self.features_hook
+            # return max_prob_obj, max_prob_cls, overlap_score, bboxes
+            return max_prob_obj_cls, overlap_score, bboxes
+        else:
+            if self.use_FG:
+                return max_prob_obj_cls, overlap_score, [[]], self.features_hook
+            # return max_prob_obj, max_prob_cls, overlap_score, [[]]
+            return max_prob_obj_cls, overlap_score, [[]]
+
+
+class DetectorYolov3_surrogate():
+    def __init__(self, cfgfile="yolov5/data/coco128.yaml", weightfile="yolov5/weight/yolov3.pt",
+                 show_detail=False, use_FG=False):
+        #
+        start_t = time.time()
+        self.use_FG = use_FG
+        self.show_detail = show_detail
+        # check whether cuda or cpu
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Set up model
+
+        self.model = DetectMultiBackend(weights=weightfile, data=cfgfile, dnn=False, fp16=False)
+        self.stride, self.names, self.pt = self.model.stride, self.model.names, self.model.pt
+
+        # self.model.eval().cuda()
+        self.img_size = 416
+
+        print('Loading Yolov5 weights from %s... Done!' % (weightfile))
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if self.device == "cuda":
+            self.use_cuda = True
+            self.model.to(self.device)
+            # init MaxProbExtractor
+            self.max_prob_extractor = MaxProbExtractor().cuda()
+        else:
+            self.use_cuda = False
+            # init MaxProbExtractor
+            self.max_prob_extractor = MaxProbExtractor()
+
+        if use_FG:
+            self.features_hook = []
+
+            def hook(module, fea_in, fea_out):
+                # print("hooker working")
+                self.features_hook.append(fea_in[0])
+                # features_out_hook.append(fea_out[0])
+                return None
+
+            hook_model = self.model.model.model
+            for name, layer in hook_model._modules.items():
+                if name == "24":
+                    for hook_name, hook_layer in layer.m._modules.items():
+                        hook_layer.register_forward_hook(hook=hook)
+                        print("Hook " + str((hook_name, hook_layer)) + " done!!!")
+
+        finish_t = time.time()
+        if self.show_detail:
+            print('Total init time :%f ' % (finish_t - start_t))
+
+    def detect(self, input_imgs, cls_id_attacked, clear_imgs=None, with_bbox=True):
+        self.features_hook = []
+        start_t = time.time()
+        # resize image
+        input_imgs = F.interpolate(input_imgs, size=self.img_size).to(self.device)
+
+        # Get detections
+        self.model.eval()
+        detections = self.model(input_imgs)[0]  ## v5:torch.Size([8, 25200, 85])
+        if not (detections[0] == None):
+            # init cls_id_attacked
+            self.max_prob_extractor.set_cls_id_attacked(cls_id_attacked)
+            # max_prob_obj, max_prob_cls = self.max_prob_extractor(detections)
+            output_objectness, output_class = self.max_prob_extractor(detections)
+            # print(output_objectness.shape, output_class.shape)
+            output_cls_obj = torch.mul(output_objectness, output_class)
+            max_prob_obj_cls, max_prob_obj_cls_index = torch.max(output_cls_obj, dim=1)
+            # print(max_prob_obj_cls.shape)
+
+            if (with_bbox):
+                bboxes = non_max_suppression(detections, conf_thres=0.5, iou_thres=0.4, classes=cls_id_attacked)  ## <class 'list'>.
                 # print(bboxes)
                 # bboxes = non_max_suppression_old(detections, 0.4, 0.6)
                 # only non None. Replace None with torch.tensor([])

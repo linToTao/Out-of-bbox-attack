@@ -1,10 +1,10 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 import sys
 import random
 import argparse
 
-model_name = "yolov5"  # options : yolov3, yolov5, fasterrcnn
+model_name = "yolov3"  # options : yolov3, yolov5, fasterrcnn
 if model_name == "yolov3":
     from PyTorchYOLOv3.detect import DetectorYolov3
     print("Victim model is yolov3")
@@ -12,10 +12,10 @@ if model_name == "yolov5":
     from yolov5.detect import DetectorYolov5
     print("Victim model is yolov5")
 
-grey_mask_img_path = './dataset/coco/train_banana_images_withMask/'
-output_feature_path = './dataset/coco/train_banana_feature-' + model_name
-# grey_mask_img_path = './dataset/coco/train_stop_images_withMask/'
-# output_feature_path = './dataset/coco/train_image_feature-' + model_name
+# grey_mask_img_path = './dataset/coco/train_banana_images_withMask/'
+# output_feature_path = './dataset/coco/train_banana_feature-' + model_name
+grey_mask_img_path = './dataset/coco/train_stop_images_withMask/'
+output_feature_path = './dataset/coco/train_stop_feature-' + model_name
 
 print("masked images from: " + grey_mask_img_path)
 print("save the features in: " + output_feature_path)

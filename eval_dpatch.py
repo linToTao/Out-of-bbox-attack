@@ -3,10 +3,10 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 import argparse
 is_surrogate = False
 attack_mode = 'trigger'  # 'trigger', 'patch'
-model_name = "yolov5"  # options : yolov3, yolov5, fasterrcnn
+model_name = "yolov3"  # options : yolov3, yolov5, fasterrcnn
 lr = 8
 # method_num = 3
-best_step = 283
+best_step = 637
 test_or_train = "test"
 output_mode = 1  # options:  0(training data. no-patch and label without confidence)   /   1(evalution. with-pacth and label with confidence)
 print("model_name = " + model_name)
@@ -43,7 +43,7 @@ import cv2
 from tqdm import tqdm
 from torch import autograd
 from ensemble_tool.utils import *
-from ensemble_tool.model import train_rowPtach, eval_rowPtach
+from ensemble_tool.model import train_rowPtach, eval_DPtach
 
 from adversarialYolo.demo import DetectorYolov2
 from adversarialYolo.load_data import AdvDataset, PatchTransformer, PatchApplier, PatchTransformer_out_of_bbox
@@ -54,7 +54,7 @@ Gparser = argparse.ArgumentParser(description='Advpatch evaluation')
 # Gparser.add_argument('--tiny', action='store_true', help='options :True or False')
 # Gparser.add_argument('--patch', default='', help='patch location')
 
-opt, unpar = Gparser.parse_known_args()
+apt1, unpar = Gparser.parse_known_args()
 if attack_mode == 'patch':
     num_of_patches = 2
     patch_scale = 0.36  # patch size
@@ -64,7 +64,7 @@ position = 'down'
 cls_id_attacked = 11  # (11: stop sign  9: traffic light  46: banana  47: apple). List: https://gist.github.com/AruniRC/7b3dadd004da04c80198557db5da4bda
 if cls_id_attacked == 11:
     position = 'down'
-    dataset_second = "stop"
+    dataset_second = "simulator"
     bias_coordinate = 1.5  # use in ‘trigger’ attack_mode
     patch_scale = 0.64
 elif cls_id_attacked == 9:
@@ -110,13 +110,14 @@ patch_mode = 0  # options: 0(patch), 1(white), 2(gray), 3(randon)
 # else:
 #     method_dir = model_name + "_method" + str(method_num) + "_" + str(lr)
 method_dir = model_name + "_adam_" + str(lr) + '_exp'
-method_dir = model_name + '_Dpatch_exp3'
+method_dir = model_name + '_Dpatch_exp_sim'
 if attack_mode == 'patch':
     fake_images_path = ["./exp/exp2/generated/generated-images0-0004.png",
                         "./exp/exp2/generated/generated-images1-0004.png"]
 elif attack_mode == 'trigger':
 
     fake_images_path = ["/pub/data/lin/exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
+
     # fake_images_path = ["./exp/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
     # fake_images_path = ["./exp_repeat1/" + method_dir + "/generated/generated-images0-0" + str(best_step) + ".png"]
 
@@ -150,8 +151,7 @@ else:
     # sss = sss + '_' + 'stop'
     # sss = sss + '_' + 'stop_val_5e-1_tvweight'
     if attack_mode == "trigger":
-        sss = sss + '_' + 'exp_' + test_or_train + '_Dpatch3'
-        # sss = sss + '_' + 'exp_' + test_or_train + '_adam_' + str(lr)
+        sss = sss + '_' + 'exp_' + test_or_train + '_Dpatch_wo3'
         # if method_num == 0:
         #     sss = sss + '_' + 'exp_' + test_or_train + '_baseline_' + str(lr)
         # elif method_num == 1:
@@ -391,7 +391,7 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
                                  dtype=np.float32)
                 labels.append(label)
                 b[:-3] = b[:-3] * img_side
-                label_rescale = np.array([b[-1], b[-2], b[0], b[1], b[2], b[3]], dtype=np.float32)
+                label_rescale = np.array([b[-1], b[-2] * b[-3], b[0], b[1], b[2], b[3]], dtype=np.float32)
                 labels_rescale.append(label_rescale)
         labels = np.array(labels)
         labels_rescale = np.array(labels_rescale)
@@ -420,7 +420,7 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
         labels_tensor = plt2tensor(labels).to(device)
         no_detect_img = False
         low_conf_img = False
-        p_img_batch, fake_images_denorm, bboxes, no_detect_img, low_conf_img = eval_rowPtach(generator=None,
+        p_img_batch, fake_images_denorm, bboxes, no_detect_img, low_conf_img = eval_DPtach(generator=None,
                                                                                              batch_size=batch_size,
                                                                                              device=device,
                                                                                              latent_shift=None,
@@ -471,7 +471,7 @@ for i, imm in tqdm(enumerate(source_data), desc=f'Output video ', total=nframes)
                             dtype=np.float32)
                         labels.append(label)
                         b[:-3] = b[:-3] * img_side
-                        label_rescale = np.array([b[-1], b[-2], b[0], b[1], b[2], b[3]], dtype=np.float32)
+                        label_rescale = np.array([b[-1], b[-2] * b[-3], b[0], b[1], b[2], b[3]], dtype=np.float32)
                         labels_rescale.append(label_rescale)
                 labels = np.array(labels)
                 labels_rescale = np.array(labels_rescale)
