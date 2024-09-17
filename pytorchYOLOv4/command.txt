@@ -1,1 +1,0 @@
-python demo.py -cfgfile ./cfg/yolov4.cfg -weightfile ./weight/yolov4.weights -imgfile ./data/giraffe.jpg
